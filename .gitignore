@@ -26,7 +26,29 @@ go.work.sum
 
 # env file
 .env
+.env.*
 
 # Editor/IDE
-# .idea/
-# .vscode/
+.idea/
+.vscode/
+
+# Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.backup
+*.tfplan
+terraform.tfvars
+override.tf
+
+# AWS
+*.pem
+aws-credentials
+
+# Sensitive data - never commit real bank exports or receipt images
+data/
+samples/*.csv
+samples/*.pdf
+samples/*.png
+samples/*.jpg
+samples/*.jpeg
