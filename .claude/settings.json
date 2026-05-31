@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go build ./...)",
+      "Bash(go test ./...)",
+      "Bash(go test -v ./...)",
+      "Bash(go test -run *)",
+      "Bash(go vet ./...)",
+      "Bash(go fmt ./...)",
+      "Bash(go mod tidy)",
+      "Bash(go mod download)",
+      "Bash(go run ./cmd/server*)",
+      "Bash(terraform fmt)",
+      "Bash(terraform validate)",
+      "Bash(terraform init)",
+      "Bash(terraform plan)",
+      "Bash(git status)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git add*)",
+      "Bash(aws logs tail*)",
+      "Bash(aws dynamodb describe-table*)",
+      "Bash(aws lambda list-functions*)"
+    ],
+    "deny": [
+      "Bash(terraform apply*)",
+      "Bash(terraform destroy*)",
+      "Bash(aws dynamodb delete-table*)"
+    ]
+  }
+}
