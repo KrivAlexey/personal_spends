@@ -117,6 +117,10 @@ See `docs/decisions/` for full ADRs.
 
 ## AI Collaboration Notes
 
+### Learning project — explain as you go
+
+This is a learning project (see learning goals above). Before making changes — especially infrastructure (Terraform, AWS resources), architecture, or anything non-trivial — briefly explain **what** you're about to do and **why**, including alternatives considered. Don't just execute silently. Prefer short explanations over long ones, but don't skip the reasoning.
+
 ### Model selection
 
 Default to **Sonnet 4.6** for this project. Switch to **Opus 4.7** when the work needs cross-system reasoning or deep trade-off analysis.
