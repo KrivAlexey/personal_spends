@@ -34,7 +34,6 @@ go.work.sum
 
 # Terraform
 .terraform/
-.terraform.lock.hcl
 *.tfstate
 *.tfstate.backup
 *.tfplan
