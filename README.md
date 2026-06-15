@@ -37,15 +37,22 @@ docs/
 samples/        Test fixtures (gitignored for real data — use fake data only)
 ```
 
-## Prerequisites
+## Environment Setup
 
-- Go 1.22+
-- AWS CLI configured (`aws configure`)
-- Terraform 1.6+
-- Anthropic API key in `.env`:
-  ```
-  ANTHROPIC_API_KEY=sk-ant-...
-  ```
+1. **Install tooling** — Go 1.22+, [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html), [Terraform 1.6+](https://developer.hashicorp.com/terraform/install).
+
+2. **Create an IAM user for Terraform** — don't use your AWS root account or its access keys. Create a dedicated IAM user, then attach a policy granting only what's needed to manage the resources in `terraform/main.tf`. The current required permissions are documented in [`terraform/iam-policy.json`](terraform/iam-policy.json) — paste it into the IAM console's JSON policy editor (replace `<ACCOUNT_ID>` with your AWS account ID). Update this file whenever `main.tf` gains new resource types.
+
+3. **Configure AWS credentials**:
+   ```bash
+   aws configure
+   ```
+   Use the access key/secret for the IAM user above. Region: `eu-central-1`.
+
+4. **Anthropic API key** — create `.env`:
+   ```
+   ANTHROPIC_API_KEY=sk-ant-...
+   ```
 
 ## Run locally
 

@@ -1,3 +1,7 @@
+# The IAM identity running `terraform apply` against this file needs the
+# permissions documented in iam-policy.json (least-privilege, scoped to the
+# resources below). Update that file when adding new resources here.
+
 terraform {
   required_version = ">= 1.6"
 
