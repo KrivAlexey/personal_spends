@@ -1,0 +1,102 @@
+categories:
+  - name: groceries
+    description: Supermarkets, grocery stores, and food markets for home consumption (e.g. REWE, Edeka, Lidl, Aldi).
+
+  - name: restaurants
+    description: Sit-down and takeaway dining, food delivery apps (Lieferando, Uber Eats), fast food.
+
+  - name: coffee_shops
+    description: Cafes and coffee shops (e.g. Starbucks, local cafes) — small, frequent purchases.
+
+  - name: bars_alcohol
+    description: Bars, pubs, breweries, and off-license alcohol purchases.
+
+  - name: transportation_public
+    description: Public transit — buses, trains, subways, transit passes and single tickets.
+
+  - name: fuel
+    description: Gasoline, diesel, EV charging at public stations.
+
+  - name: ride_share_taxi
+    description: Taxis, Uber, Bolt, and other ride-hailing services.
+
+  - name: parking
+    description: Parking garages, meters, and parking apps.
+
+  - name: car_maintenance
+    description: Vehicle repairs, servicing, inspections, car washes, tires.
+
+  - name: housing_rent
+    description: Rent or mortgage payments for primary residence.
+
+  - name: utilities
+    description: Electricity, water, gas, heating, and waste collection bills.
+
+  - name: internet_phone
+    description: Home internet, mobile phone plans, and landline bills.
+
+  - name: insurance
+    description: Health, auto, home/renters, life, and liability insurance premiums.
+
+  - name: healthcare
+    description: Doctor visits, dental, hospital bills, medical procedures, therapy.
+
+  - name: pharmacy
+    description: Prescription and over-the-counter medication, drugstore purchases.
+
+  - name: fitness
+    description: Gym memberships, fitness classes, sports clubs, home workout equipment.
+
+  - name: entertainment
+    description: Movies, concerts, live events, video games, hobbies.
+
+  - name: streaming_subscriptions
+    description: Streaming services (Netflix, Spotify) and other recurring media subscriptions.
+
+  - name: software_subscriptions
+    description: SaaS tools, cloud storage, productivity apps, and other software subscriptions.
+
+  - name: shopping_clothing
+    description: Apparel, shoes, and fashion accessories.
+
+  - name: electronics
+    description: Computers, phones, gadgets, and electronic accessories.
+
+  - name: home_goods
+    description: Furniture, appliances, home decor, and household equipment.
+
+  - name: household_supplies
+    description: Cleaning products, toiletries, paper goods, and other consumable home supplies.
+
+  - name: personal_care
+    description: Haircuts, cosmetics, skincare, salons, and grooming services.
+
+  - name: education
+    description: Tuition, courses, certifications, books, and learning materials.
+
+  - name: childcare
+    description: Daycare, babysitting, kids' activities, and child-related expenses.
+
+  - name: pets
+    description: Pet food, veterinary care, grooming, and pet supplies.
+
+  - name: travel
+    description: Flights, hotels, vacation rentals, and trip-related bookings.
+
+  - name: gifts_donations
+    description: Gifts for others and charitable donations.
+
+  - name: taxes
+    description: Income tax payments, property tax, and other tax obligations.
+
+  - name: savings_investments
+    description: Transfers to savings accounts, brokerage deposits, retirement contributions.
+
+  - name: bank_fees
+    description: Account maintenance fees, ATM fees, overdraft charges, interest paid.
+
+  - name: business_expenses
+    description: Work-related or freelance/side-business purchases, office supplies, business travel.
+
+  - name: uncategorized
+    description: Fallback category for transactions that don't clearly match any other category.
