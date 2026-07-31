@@ -5,11 +5,15 @@
       "Bash(go test ./...)",
       "Bash(go test -v ./...)",
       "Bash(go test -run *)",
+      "Bash(go test *)",
       "Bash(go vet ./...)",
       "Bash(go fmt ./...)",
+      "Bash(gofmt -l*)",
+      "Bash(gofmt -w*)",
       "Bash(go mod tidy)",
       "Bash(go mod download)",
       "Bash(go run ./cmd/server*)",
+      "Bash(golangci-lint run*)",
       "Bash(terraform fmt)",
       "Bash(terraform validate)",
       "Bash(terraform init)",
@@ -17,6 +21,9 @@
       "Bash(git status)",
       "Bash(git diff*)",
       "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(git branch*)",
+      "Bash(git fetch*)",
       "Bash(git add*)",
       "Bash(git checkout -b*)",
       "Bash(git commit*)",
@@ -24,12 +31,16 @@
       "Bash(gh pr create*)",
       "Bash(aws logs tail*)",
       "Bash(aws dynamodb describe-table*)",
-      "Bash(aws lambda list-functions*)"
+      "Bash(aws lambda list-functions*)",
+      "Edit(**)",
+      "Write(**)"
     ],
     "deny": [
       "Bash(terraform apply*)",
       "Bash(terraform destroy*)",
-      "Bash(aws dynamodb delete-table*)"
+      "Bash(aws dynamodb delete-table*)",
+      "Edit(.claude/**)",
+      "Write(.claude/**)"
     ]
   }
 }
