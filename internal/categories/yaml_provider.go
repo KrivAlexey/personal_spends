@@ -6,6 +6,7 @@ import (
 	"maps"
 	"os"
 	"slices"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -49,6 +50,9 @@ func NewYamlCategoryProvider(filePath string) (*YamlCategoryProvider, error) {
 
 func (provider *YamlCategoryProvider) List(ctx context.Context) ([]Category, error) {
 	categories := slices.Collect(maps.Values(provider.categories))
+	slices.SortFunc(categories, func(a, b Category) int {
+		return strings.Compare(a.Name, b.Name)
+	})
 	return categories, nil
 }
 
@@ -62,19 +66,19 @@ func (provider *YamlCategoryProvider) Get(ctx context.Context, name string) (Cat
 }
 
 func (provider *YamlCategoryProvider) loadAllCategories() error {
-	var yamlCategories yamlCategories
+	var parsed yamlCategories
 
 	data, err := os.ReadFile(provider.filePath)
 	if err != nil {
 		return fmt.Errorf("could not read categories file: %v. error:%w", provider.filePath, err)
 	}
 
-	err = yaml.Unmarshal(data, &yamlCategories)
+	err = yaml.Unmarshal(data, &parsed)
 	if err != nil {
 		return fmt.Errorf("can't parse input yaml categories file: %v. error: %w", provider.filePath, err)
 	}
 
-	for _, cat := range yamlCategories.Categories {
+	for _, cat := range parsed.Categories {
 		boCategory := cat.toCategory()
 		provider.categories[boCategory.Name] = boCategory
 	}
