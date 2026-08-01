@@ -121,6 +121,24 @@ func TestStore_SaveExpenses_GivesUpAfterMaxRetries(t *testing.T) {
 	}
 }
 
+func TestStore_SaveExpenses_ContextCancelled(t *testing.T) {
+	client := &fakeDynamoClient{unprocessedLeft: MaxRetryAttempts} // always unprocessed, forces the backoff wait
+	store := &Store{client: client, table: "expenses"}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	expenses := []Expense{{ID: "1", Date: time.Now(), Category: "Groceries"}}
+
+	err := store.SaveExpenses(ctx, expenses)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("SaveExpenses() error = %v, want wrapped %v", err, context.Canceled)
+	}
+	if client.batchWriteCalls != 1 {
+		t.Errorf("batchWriteCalls = %d, want 1 (cancelled during backoff, before a retry)", client.batchWriteCalls)
+	}
+}
+
 func TestStore_SaveExpenses_ClientError(t *testing.T) {
 	wantErr := errors.New("throttled")
 	client := &fakeDynamoClient{batchWriteErr: wantErr}
