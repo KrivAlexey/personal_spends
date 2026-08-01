@@ -2,11 +2,14 @@
   "permissions": {
     "allow": [
       "Bash(go build ./...)",
+      "Bash(go build *)",
       "Bash(go test ./...)",
       "Bash(go test -v ./...)",
       "Bash(go test -run *)",
       "Bash(go test *)",
       "Bash(go vet ./...)",
+      "Bash(go vet *)",
+      "Bash(go tool cover*)",
       "Bash(go fmt ./...)",
       "Bash(gofmt -l*)",
       "Bash(gofmt -w*)",
