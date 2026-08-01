@@ -1,5 +1,8 @@
 # personal_spends
 
+[![CI](https://github.com/KrivAlexey/personal_spends/actions/workflows/ci.yml/badge.svg)](https://github.com/KrivAlexey/personal_spends/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/KrivAlexey/personal_spends/branch/main/graph/badge.svg)](https://codecov.io/gh/KrivAlexey/personal_spends)
+
 Personal expense tracking with AI categorization. Accepts bank export CSVs and receipt/bill images, categorizes expenses using Claude AI, stores results in DynamoDB, and exposes an MCP server so AI agents can query spending data.
 
 ## Architecture
