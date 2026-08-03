@@ -35,15 +35,13 @@
       "Bash(aws logs tail*)",
       "Bash(aws dynamodb describe-table*)",
       "Bash(aws lambda list-functions*)",
-      "Edit(**)",
-      "Write(**)"
+      "Edit(**)"
     ],
     "deny": [
       "Bash(terraform apply*)",
       "Bash(terraform destroy*)",
       "Bash(aws dynamodb delete-table*)",
-      "Edit(.claude/**)",
-      "Write(.claude/**)"
+      "Edit(.claude/**)"
     ]
   }
 }
