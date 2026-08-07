@@ -109,12 +109,25 @@ func unpackCategorizeBatch(message *anthropic.Message, transactions []Transactio
 			return nil, fmt.Errorf("categorizer: unmarshal tool input: %w", err)
 		}
 
-		categorized := make([]CategorizedTransaction, len(result.Results))
-		for i, r := range result.Results {
-			categorized[i] = CategorizedTransaction{
+		categorized := make([]CategorizedTransaction, len(transactions))
+		seen := make([]bool, len(transactions))
+		for _, r := range result.Results {
+			if r.Index < 0 || r.Index >= len(transactions) {
+				return nil, fmt.Errorf("categorizer: result index %d out of range for batch of %d transactions", r.Index, len(transactions))
+			}
+			if seen[r.Index] {
+				return nil, fmt.Errorf("categorizer: duplicate result for transaction index %d", r.Index)
+			}
+			seen[r.Index] = true
+			categorized[r.Index] = CategorizedTransaction{
 				Transaction: transactions[r.Index],
 				Category:    r.Category,
 				Confidence:  r.Confidence,
+			}
+		}
+		for i, ok := range seen {
+			if !ok {
+				return nil, fmt.Errorf("categorizer: missing result for transaction index %d", i)
 			}
 		}
 		return categorized, nil
