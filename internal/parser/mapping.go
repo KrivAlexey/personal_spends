@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -15,12 +16,13 @@ type BankMappingList struct {
 }
 
 type BankMapping struct {
-	BankName string            `yaml:"bankName"`
-	Mappings map[string]string `yaml:"mappings"`
+	BankName   string            `yaml:"bankName"`
+	DateFormat string            `yaml:"dateFormat"`
+	Mappings   map[string]string `yaml:"mappings"`
 }
 
 type BankMappingProvider interface {
-	GetMapping(bankName string) (map[string]string, error)
+	GetMapping(ctx context.Context, bankName string) (BankMapping, error)
 }
 
 type FileMappingProvider struct {
@@ -29,9 +31,12 @@ type FileMappingProvider struct {
 
 var _ BankMappingProvider = (*FileMappingProvider)(nil)
 
-func NewFileMappingProvider(filepath string) (*FileMappingProvider, error) {
-	var allMappings BankMappingList
+func NewFileMappingProvider(ctx context.Context, filepath string) (*FileMappingProvider, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("reading bank mapping file %s: %w", filepath, err)
+	}
 
+	var allMappings BankMappingList
 	content, err := os.ReadFile(filepath)
 	if err != nil {
 		return nil, fmt.Errorf("reading bank mapping file %s: %w", filepath, err)
@@ -52,10 +57,10 @@ func NewFileMappingProvider(filepath string) (*FileMappingProvider, error) {
 	}, nil
 }
 
-func (provider *FileMappingProvider) GetMapping(bankName string) (map[string]string, error) {
+func (provider *FileMappingProvider) GetMapping(ctx context.Context, bankName string) (BankMapping, error) {
 	v, ok := provider.mappings[bankName]
 	if ok {
-		return v.Mappings, nil
+		return v, nil
 	}
-	return nil, ErrBankMappingNotFound
+	return BankMapping{}, ErrBankMappingNotFound
 }
