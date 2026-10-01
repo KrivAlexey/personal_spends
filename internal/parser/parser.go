@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/KrivAlexey/personal_spends/internal/categorizer"
@@ -26,6 +27,7 @@ func (parser *Parser) ParseCSV(ctx context.Context, bankName string, r io.Reader
 	}
 
 	csvReader := csv.NewReader(r)
+	csvReader.Comma = mapping.Comma()
 	header, err := csvReader.Read()
 	if err != nil {
 		return nil, fmt.Errorf("parser: unable to read a header row: %w", err)
@@ -36,10 +38,11 @@ func (parser *Parser) ParseCSV(ctx context.Context, bankName string, r io.Reader
 		fieldByCol[i] = mapping.Mappings[col]
 	}
 
-	return ParseWithMapping(ctx, bankName, mapping.DateFormat, fieldByCol, csvReader)
+	return ParseWithMapping(ctx, mapping, fieldByCol, csvReader)
 }
 
-func ParseWithMapping(ctx context.Context, bankName string, dateFormat string, fieldByCol []string, r *csv.Reader) ([]categorizer.Transaction, error) {
+func ParseWithMapping(ctx context.Context, mapping BankMapping, fieldByCol []string, r *csv.Reader) ([]categorizer.Transaction, error) {
+	bankName := mapping.BankName
 	var transactions []categorizer.Transaction
 	for {
 		if err := ctx.Err(); err != nil {
@@ -62,11 +65,11 @@ func ParseWithMapping(ctx context.Context, bankName string, dateFormat string, f
 		for i, value := range row {
 			switch fieldByCol[i] {
 			case "Date":
-				tx.Date, err = time.Parse(dateFormat, value)
+				tx.Date, err = time.Parse(mapping.DateFormat, value)
 			case "Merchant":
 				tx.Merchant = value
 			case "Amount":
-				tx.Amount, err = strconv.ParseFloat(value, 64)
+				tx.Amount, err = parseAmount(value, mapping.DecimalSeparator)
 			case "Currency":
 				tx.Currency = value
 			case "Description":
@@ -81,4 +84,15 @@ func ParseWithMapping(ctx context.Context, bankName string, dateFormat string, f
 		transactions = append(transactions, tx)
 	}
 	return transactions, nil
+}
+
+// parseAmount reads a decimal number written with the bank's separator.
+// With a comma separator the dots are thousands grouping ("1.234,56").
+func parseAmount(value string, decimalSeparator string) (float64, error) {
+	value = strings.TrimSpace(value)
+	if decimalSeparator == "," {
+		value = strings.ReplaceAll(value, ".", "")
+		value = strings.Replace(value, ",", ".", 1)
+	}
+	return strconv.ParseFloat(value, 64)
 }

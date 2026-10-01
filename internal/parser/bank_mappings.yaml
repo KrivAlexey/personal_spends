@@ -1,0 +1,11 @@
+allMappings:
+  - bankName: sparkasse
+    dateFormat: "02.01.06"
+    delimiter: ";"
+    decimalSeparator: ","
+    mappings:
+      Buchungstag: Date
+      Beguenstigter/Zahlungspflichtiger: Merchant
+      Betrag: Amount
+      Waehrung: Currency
+      Verwendungszweck: Description

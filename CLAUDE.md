@@ -40,7 +40,7 @@ cmd/
 internal/
   handler/        HTTP/Lambda request handlers
   categorizer/    Categorizer interface + Anthropic Haiku implementation
-  parser/         CSV parsing and schema detection
+  parser/         CSV parsing and per-bank column mappings
   storage/        DynamoDB read/write
   categories/     CategoryProvider interface + YAML implementation
   mcp/            MCP tool definitions and handlers
@@ -94,7 +94,7 @@ terraform apply
 - **Categorizer as interface from day one:** swappable between Anthropic API, AWS Bedrock, and future on-demand GPU without changing callers
 - **CategoryProvider as interface from day one:** YAML file for v1, PostgreSQL RDS (with RDS Proxy) for Phase 2
 - **MCP server is local, not in Lambda:** Lambda cold starts would make MCP calls feel laggy; local binary calls the REST API as a client
-- **Claude for CSV schema detection:** Claude reads the first few rows to detect column layout once, result cached; pure Go parses subsequent rows with that schema
+- **Bank mappings committed by hand:** each bank's column layout, delimiter, date and decimal format lives in `internal/parser/bank_mappings.yaml`, written manually and added to the repo when a new bank's export shows up; an unknown bank is an error, not a guess. Detecting the layout at runtime with Claude (read the first N rows, persist the result as a new mapping) is a later step behind the `BankMappingProvider` interface
 - **Flat Terraform first:** single `main.tf` to learn the basics; refactor into modules as a dedicated exercise later
 - **EUR only for v1:** simplifies storage and display; multi-currency added if needed
 - **CSV only for v1, no image extraction:** `Categorizer` carries no `ExtractFromImage` method. An interface method with no implementation stops every implementation from satisfying the interface — `*Claude` did not. Receipts come back as a method plus an S3 bucket plus a Vision call, built together
@@ -110,6 +110,7 @@ See `docs/decisions/` for full ADRs.
 5. AWS Bedrock — swap Categorizer implementation to model-agnostic Bedrock InvokeModel
 6. MCP SSE transport — make the MCP server reachable from claude.ai and other remote agents
 7. On-demand GPU — vLLM on spot EC2, brought up only during processing, for self-hosted model experiments
+8. Runtime bank-mapping detection — Claude reads the first N rows of an unknown bank's CSV and returns the column layout, persisted as a new mapping instead of hand-editing the YAML
 
 ## MCP Tools (v1)
 
