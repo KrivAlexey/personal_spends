@@ -59,14 +59,22 @@ Three thin `main.go` files, all wiring up the same `internal/` packages:
 ```
 POST /uploads/csv  (multipart, field: "file")
   │
-  ├─ parser.DetectSchema()       Claude reads first N rows, returns column mapping
-  ├─ parser.ParseCSV()           pure Go CSV parsing using the detected schema
+  ├─ BankMappingProvider.GetMapping(bankName)   column mapping, delimiter,
+  │                              date and decimal format for that bank
+  ├─ parser.ParseCSV()           pure Go CSV parsing using that mapping
   ├─ worker pool                 fan out batches of ~50 transactions to goroutines
   │     goroutine × N
   │       └─ categorizer.Categorize(batch)   one Claude Haiku call per batch
   │             returns: category, confidence, notes per transaction
   └─ storage.SaveExpenses()      batch write to DynamoDB
 ```
+
+Bank mappings are written by hand and committed to the repo
+(`internal/parser/bank_mappings.yaml`) — one entry per bank, added as a new
+bank's export is encountered. An unknown `bankName` is an error, not a guess.
+Generating a mapping at runtime (Claude reads the first N rows and returns the
+column layout, result persisted as a new mapping) comes later; the
+`BankMappingProvider` interface is the seam for it.
 
 ### Receipt / bill image upload
 
