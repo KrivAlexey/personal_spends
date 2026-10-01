@@ -24,6 +24,8 @@ type Claude struct {
 	categories []string
 }
 
+var _ Categorizer = (*Claude)(nil)
+
 func NewClaude(apiKey string, categoriies []string) *Claude {
 	claude := &Claude{
 		client:     anthropic.NewClient(option.WithAPIKey(apiKey)),
