@@ -1,21 +1,23 @@
 # personal_spends
 
-Go backend for personal expense tracking and AI categorization. Accepts bank export CSVs and receipt/bill images, categorizes expenses using Claude AI, stores results in DynamoDB, and exposes an MCP server so AI agents can query spending data.
+Go backend for personal expense tracking and AI categorization. Accepts bank export CSVs, categorizes expenses using Claude AI, stores results in DynamoDB, and exposes an MCP server so AI agents can query spending data.
 
-**Learning goals for this project:** Go concurrency patterns, Claude API (vision + tool use), AWS Lambda, Terraform, MCP server implementation, agentic development practices.
+v1 is the smallest end-to-end path: CSV upload, serial categorization, DynamoDB write. The worker pool is step 2; receipt/bill image extraction is backlog.
+
+**Learning goals for this project:** Go concurrency patterns, Claude API (tool use, and vision once images land), AWS Lambda, Terraform, MCP server implementation, agentic development practices.
 
 ## Architecture
 
 ```
-CSV upload    ──► parser ──► worker pool (goroutines + channels) ──► Categorizer ──► DynamoDB
-Image upload  ──► S3 ──► Claude Vision (extract items) ──────────► Categorizer ──► DynamoDB
+v1:      CSV upload ──► parser ──► serial batch loop ──────────────► Categorizer ──► DynamoDB
+step 2:  CSV upload ──► parser ──► worker pool (goroutines + chans) ─► Categorizer ──► DynamoDB
 
 Interfaces:
   REST API    — upload files, query expenses, get summaries (API Gateway + Lambda)
   MCP server  — AI agents query expenses via tools (local stdio binary)
 ```
 
-**AWS services:** Lambda (compute), API Gateway (REST), DynamoDB (expenses storage), S3 (receipt image uploads)
+**AWS services:** Lambda (compute), API Gateway (REST), DynamoDB (expenses storage)
 **Infrastructure:** Terraform, flat `main.tf` for v1
 
 ### Entry points
@@ -88,23 +90,26 @@ terraform apply
 
 - **Lambda over ECS:** personal-scale workload, scales to zero, free tier covers normal use, simpler Terraform
 - **DynamoDB for expenses:** no VPC complexity, fits Lambda's stateless model, sufficient for date and category queries
-- **Worker pool for CSV processing:** fan out N batches concurrently via goroutines and channels; batch size ~50 transactions per Claude API call
+- **Serial batch loop first, worker pool second:** v1 walks the ~50-transaction batches in a plain loop, because the first upload is also the first time handler, parser, categorizer and storage run together. The pool (goroutines + channels, fanning out N batches) replaces the loop as step 2, once there is a working path to make concurrent
 - **Categorizer as interface from day one:** swappable between Anthropic API, AWS Bedrock, and future on-demand GPU without changing callers
 - **CategoryProvider as interface from day one:** YAML file for v1, PostgreSQL RDS (with RDS Proxy) for Phase 2
 - **MCP server is local, not in Lambda:** Lambda cold starts would make MCP calls feel laggy; local binary calls the REST API as a client
 - **Claude for CSV schema detection:** Claude reads the first few rows to detect column layout once, result cached; pure Go parses subsequent rows with that schema
 - **Flat Terraform first:** single `main.tf` to learn the basics; refactor into modules as a dedicated exercise later
 - **EUR only for v1:** simplifies storage and display; multi-currency added if needed
+- **CSV only for v1, no image extraction:** `Categorizer` carries no `ExtractFromImage` method. An interface method with no implementation stops every implementation from satisfying the interface — `*Claude` did not. Receipts come back as a method plus an S3 bucket plus a Vision call, built together
 
 See `docs/decisions/` for full ADRs.
 
-## Phase 2 Backlog (in order)
+## Backlog (in order)
 
-1. SQS fan-out — split large CSV uploads into SQS messages, parallel Lambda invocations per batch
-2. PostgreSQL RDS (Aurora Serverless v2 + RDS Proxy) — categories, vendor rules, budgets schema
-3. AWS Bedrock — swap Categorizer implementation to model-agnostic Bedrock InvokeModel
-4. MCP SSE transport — make the MCP server reachable from claude.ai and other remote agents
-5. On-demand GPU — vLLM on spot EC2, brought up only during processing, for self-hosted model experiments
+1. Worker pool — replace the serial batch loop with a bounded pool of goroutines fed by a channel; the Go concurrency exercise, and the first step after v1 runs end to end
+2. Receipt / bill images — `POST /uploads/image` to S3, Claude Vision extracts `[]Transaction`, then the same path as CSV rows; adds the S3 bucket to Terraform and a method back onto `Categorizer`
+3. SQS fan-out — split large CSV uploads into SQS messages, parallel Lambda invocations per batch
+4. PostgreSQL RDS (Aurora Serverless v2 + RDS Proxy) — categories, vendor rules, budgets schema
+5. AWS Bedrock — swap Categorizer implementation to model-agnostic Bedrock InvokeModel
+6. MCP SSE transport — make the MCP server reachable from claude.ai and other remote agents
+7. On-demand GPU — vLLM on spot EC2, brought up only during processing, for self-hosted model experiments
 
 ## MCP Tools (v1)
 
