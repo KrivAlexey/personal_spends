@@ -2,79 +2,36 @@
 
 Go backend for personal expense tracking and AI categorization. Accepts bank export CSVs, categorizes expenses using Claude AI, stores results in DynamoDB, and exposes an MCP server so AI agents can query spending data.
 
-v1 is the smallest end-to-end path: CSV upload, serial categorization, DynamoDB write. The worker pool is step 2; receipt/bill image extraction is backlog.
+v1 is the smallest end-to-end path: CSV upload, serial categorization, DynamoDB write.
 
 **Learning goals for this project:** Go concurrency patterns, Claude API (tool use, and vision once images land), AWS Lambda, Terraform, MCP server implementation, agentic development practices.
 
-## Architecture
+## Where things are documented
 
-```
-v1:      CSV upload ──► parser ──► serial batch loop ──────────────► Categorizer ──► DynamoDB
-step 2:  CSV upload ──► parser ──► worker pool (goroutines + chans) ─► Categorizer ──► DynamoDB
+- `docs/architecture.md` — system diagram, request flows, interfaces, data model, API, MCP tools, configuration, and the ordered list of later changes (the backlog)
+- `docs/decisions/` — ADRs, one per design decision
+- `openspec/` — specs and change proposals
 
-Interfaces:
-  REST API    — upload files, query expenses, get summaries (API Gateway + Lambda)
-  MCP server  — AI agents query expenses via tools (local stdio binary)
-```
-
-**AWS services:** Lambda (compute), API Gateway (REST), DynamoDB (expenses storage)
-**Infrastructure:** Terraform, flat `main.tf` for v1
-
-### Entry points
-
-Three thin `main.go` files, all importing the same `internal/` packages:
-
-```
-cmd/lambda/    — production Lambda handler (deployed to AWS)
-cmd/server/    — local HTTP server for development (localhost:8080)
-cmd/mcp/       — MCP server binary, runs locally via stdio
-```
+Read the relevant doc before changing a subsystem; update it in the same PR when the change alters what it says.
 
 ## Project Structure
 
 ```
-cmd/
-  lambda/         Lambda entry point
-  server/         Local dev HTTP server
-  mcp/            MCP server (stdio transport)
-internal/
-  handler/        HTTP/Lambda request handlers
-  categorizer/    Categorizer interface + Anthropic Haiku implementation
-  parser/         CSV parsing and per-bank column mappings
-  storage/        DynamoDB read/write
-  categories/     CategoryProvider interface + YAML implementation
-  mcp/            MCP tool definitions and handlers
-terraform/        Flat main.tf — Lambda, API Gateway, DynamoDB, S3
-docs/
-  architecture.md Detailed architecture and data model
-  decisions/      Architecture Decision Records (ADRs)
-samples/          Test fixtures — gitignored for real data, use fake data only
+cmd/          lambda/, server/ (localhost:8080), mcp/ (stdio) — thin main.go files
+internal/     handler, categorizer, parser, storage, categories, mcp
+terraform/    flat main.tf
+docs/         architecture.md, decisions/
+samples/      test fixtures — fake data only
 ```
 
 ## Development
 
-### Prerequisites
-
-- Go 1.22+
-- AWS CLI configured (`aws configure`)
-- Terraform 1.6+
-- Anthropic API key in `.env`: `ANTHROPIC_API_KEY=sk-ant-...`
-
-### Run locally
+Prerequisites: Go 1.22+, AWS CLI configured, Terraform 1.6+, `ANTHROPIC_API_KEY` in `.env`.
 
 ```bash
 go run ./cmd/server        # HTTP server on localhost:8080
-go test ./...              # all tests
-go build ./...             # build check
-```
-
-### Deploy
-
-```bash
-cd terraform
-terraform init
-terraform plan
-terraform apply
+go build ./... && go vet ./... && go test ./...
+cd terraform && terraform init && terraform plan   # apply only when asked
 ```
 
 ## Code Conventions
@@ -86,62 +43,33 @@ terraform apply
 - Table-driven tests in `_test.go` files alongside the code they test
 - Interfaces defined in the package that uses them, not the package that implements them
 
-## Key Design Decisions
+## Working mode: delegate by default
 
-- **Lambda over ECS:** personal-scale workload, scales to zero, free tier covers normal use, simpler Terraform
-- **DynamoDB for expenses:** no VPC complexity, fits Lambda's stateless model, sufficient for date and category queries
-- **Serial batch loop first, worker pool second:** v1 walks the ~50-transaction batches in a plain loop, because the first upload is also the first time handler, parser, categorizer and storage run together. The pool (goroutines + channels, fanning out N batches) replaces the loop as step 2, once there is a working path to make concurrent
-- **Categorizer as interface from day one:** swappable between Anthropic API, AWS Bedrock, and future on-demand GPU without changing callers
-- **CategoryProvider as interface from day one:** YAML file for v1, PostgreSQL RDS (with RDS Proxy) for Phase 2
-- **MCP server is local, not in Lambda:** Lambda cold starts would make MCP calls feel laggy; local binary calls the REST API as a client
-- **Bank mappings committed by hand:** each bank's column layout, delimiter, date and decimal format lives in `internal/parser/bank_mappings.yaml`, written manually and added to the repo when a new bank's export shows up; an unknown bank is an error, not a guess. Detecting the layout at runtime with Claude (read the first N rows, persist the result as a new mapping) is a later step behind the `BankMappingProvider` interface
-- **Flat Terraform first:** single `main.tf` to learn the basics; refactor into modules as a dedicated exercise later
-- **EUR only for v1:** simplifies storage and display; multi-currency added if needed
-- **CSV only for v1, no image extraction:** `Categorizer` carries no `ExtractFromImage` method. An interface method with no implementation stops every implementation from satisfying the interface — `*Claude` did not. Receipts come back as a method plus an S3 bucket plus a Vision call, built together
+Claude implements: production code, tests, docs, Terraform, and the git workflow below, end to end. The owner reviews the PR.
 
-See `docs/decisions/` for full ADRs.
+- This is still a learning project. Before non-trivial work (architecture, infrastructure, new abstractions), explain briefly **what** and **why**, with the alternatives considered. In the PR description, call out the Go and AWS concepts the change exercises.
+- Ask before `terraform apply`, before anything that costs money or touches real AWS resources, and before changing a core interface (`Categorizer`, `CategoryProvider`, `BankMappingProvider`).
+- If the owner says they want to write something by hand, stop and switch to review: findings ranked by severity, with `file:line` and a concrete failing input for each.
 
-## Backlog (in order)
+## Definition of done
 
-1. Worker pool — replace the serial batch loop with a bounded pool of goroutines fed by a channel; the Go concurrency exercise, and the first step after v1 runs end to end
-2. Receipt / bill images — `POST /uploads/image` to S3, Claude Vision extracts `[]Transaction`, then the same path as CSV rows; adds the S3 bucket to Terraform and a method back onto `Categorizer`
-3. SQS fan-out — split large CSV uploads into SQS messages, parallel Lambda invocations per batch
-4. PostgreSQL RDS (Aurora Serverless v2 + RDS Proxy) — categories, vendor rules, budgets schema
-5. AWS Bedrock — swap Categorizer implementation to model-agnostic Bedrock InvokeModel
-6. MCP SSE transport — make the MCP server reachable from claude.ai and other remote agents
-7. On-demand GPU — vLLM on spot EC2, brought up only during processing, for self-hosted model experiments
-8. Runtime bank-mapping detection — Claude reads the first N rows of an unknown bank's CSV and returns the column layout, persisted as a new mapping instead of hand-editing the YAML
+A change is done when all of these hold:
 
-## MCP Tools (v1)
+1. `go build ./... && go vet ./... && go test ./...` passes
+2. New logic has table-driven tests, including the error paths
+3. `docs/architecture.md` / ADRs reflect the change (new decision → new ADR)
+4. It is committed on its own branch and has an open PR that links its issue
+5. No real bank data or secrets in the diff
 
-| Tool | Description |
-|------|-------------|
-| `get_expenses` | Query expenses by date range, category, or amount |
-| `get_summary` | Spending totals grouped by category for a period |
-| `list_categories` | List all configured categories |
-| `add_expense` | Manually add a single expense record |
+## Git workflow
 
-## AI Collaboration Notes
+- One issue per distinct change, docs-only changes included. Unrelated changes get separate issues and separate PRs, never a ride-along on an existing branch.
+- Branch off up-to-date `main`: `feature/<slug>`, `docs/<slug>` or `chore/<slug>`. If the change depends on an unmerged PR, branch off that PR's branch and target it with the PR.
+- Commit messages and PR titles start with the issue number: `#47 short description`. The PR body ends with `Closes #<issue>`.
+- Never commit to `main` directly, never force-push a shared branch, and merge only when the owner asks.
 
-### Learning project — explain as you go
+## Model selection
 
-This is a learning project (see learning goals above). Before making changes — especially infrastructure (Terraform, AWS resources), architecture, or anything non-trivial — briefly explain **what** you're about to do and **why**, including alternatives considered. Don't just execute silently. Prefer short explanations over long ones, but don't skip the reasoning.
+Use the **default model** for implementation, tests, single-component refactors, Terraform/YAML boilerplate, docs, and routine debugging.
 
-### Model selection
-
-Default to **Sonnet 4.6** for this project. Switch to **Opus 4.7** when the work needs cross-system reasoning or deep trade-off analysis.
-
-**Use Sonnet for:**
-- Implementation, code generation, writing tests
-- Refactoring within a single component
-- Terraform and YAML boilerplate
-- Documentation and ADR updates
-- Routine debugging
-
-**Switch to Opus for:**
-- Cross-subsystem architecture changes (e.g., changing the Categorizer or CategoryProvider interfaces)
-- Trade-off analysis spanning Go + AWS + cost + maintainability
-- Hard bugs where multiple components could be at fault
-- Designing new abstractions or refactoring across layers
-
-**Claude Code:** when you notice the conversation is heading into one of the Opus-worthy areas, suggest the user runs `/model` to switch. It costs more tokens overall to fix a wrong architectural choice later than to spend Opus tokens reasoning through it correctly the first time.
+Switch to the **strongest model** for cross-subsystem architecture changes (e.g. changing a core interface), trade-off analysis spanning Go + AWS + cost + maintainability, hard bugs where several components could be at fault, and new abstractions or refactors across layers. When a conversation heads into one of these areas, suggest the owner runs `/model`.
