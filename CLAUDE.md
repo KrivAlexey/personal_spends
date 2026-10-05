@@ -61,7 +61,12 @@ A change is done when all of these hold:
 
 1. `go build ./... && go vet ./... && go test ./...` passes
 2. New logic has table-driven tests, including the error paths
-3. `docs/architecture.md` / ADRs reflect the change (new decision → new ADR)
+3. Docs are verified against the change, before the PR is opened:
+   - `docs/architecture.md`: Implementation Status, request flows, interfaces, data model, API, MCP tools, configuration and backlog still describe the code
+   - `docs/decisions/`: a new or reversed decision gets a new ADR; a superseded ADR gets its status updated, not rewritten
+   - `openspec/specs/`: a change to observable behavior (REST/MCP contracts, `Categorizer` contract, CSV parsing rules) goes through an OpenSpec change, archived once implemented
+   - `README.md` and `CLAUDE.md`: status, setup, commands and conventions still hold
+   - The PR body says which docs changed, or "Docs: no change needed" with the reason
 4. It is committed on its own branch and has an open PR that links its issue
 5. No real bank data or secrets in the diff
 
