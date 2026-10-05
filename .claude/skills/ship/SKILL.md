@@ -61,11 +61,13 @@ git push -u origin <prefix>/<slug>
 ## 5. PR
 
 ```bash
-gh pr create --base <base> --title "#<N> <Title>" --body "<summary bullets>
+gh pr create --base <base> --title "#<N> <Title>" --body "<sections from .github/pull_request_template.md:
+What and why / Tests / Ran / Not verified / Docs / CI (\"pending\")>
 
 Closes #<N>
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)"
+gh pr checks <PR> --watch
 ```
 
 If the PR is stacked on another PR's branch, say so in its first line and note that it retargets to `main` once that PR merges.
