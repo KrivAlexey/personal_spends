@@ -178,3 +178,12 @@ func TestUnpackCategorizeBatch(t *testing.T) {
 		})
 	}
 }
+
+// TestClaudeImplementsCategorizer guards the wiring the handler depends on:
+// NewClaude's return value has to be assignable to a Categorizer field.
+func TestClaudeImplementsCategorizer(t *testing.T) {
+	var c Categorizer = NewClaude("test-key", []string{"groceries"})
+	if c == nil {
+		t.Fatal("NewClaude returned a nil Categorizer")
+	}
+}

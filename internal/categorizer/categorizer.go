@@ -7,7 +7,6 @@ import (
 
 type Categorizer interface {
 	Categorize(ctx context.Context, batch []Transaction) ([]CategorizedTransaction, error)
-	ExtractFromImage(ctx context.Context, imageURL string) ([]Transaction, error)
 }
 
 type Transaction struct {
