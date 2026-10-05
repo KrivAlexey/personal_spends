@@ -46,7 +46,7 @@ Pick the base: `origin/main` after a `git fetch`. If the change depends on an un
 
 ```bash
 git fetch -q
-git switch -c <prefix>/<slug> origin/main   # uncommitted changes carry over
+git switch -c <prefix>/<slug> --no-track origin/main   # uncommitted changes carry over
 git add <only this group's files>
 git commit -m "#<N> <short description>
 
