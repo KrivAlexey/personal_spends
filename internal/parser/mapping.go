@@ -23,8 +23,16 @@ type BankMapping struct {
 	Delimiter string `yaml:"delimiter"`
 	// DecimalSeparator is "." or ",". With ",", amounts are read as German
 	// style ("1.234,56"): dots are thousands separators and get stripped.
-	DecimalSeparator string            `yaml:"decimalSeparator"`
-	Mappings         map[string]string `yaml:"mappings"`
+	DecimalSeparator string `yaml:"decimalSeparator"`
+	// PendingColumn and PendingValue mark rows the bank hasn't booked yet;
+	// those rows are skipped. Both set or both empty.
+	PendingColumn string `yaml:"pendingColumn"`
+	PendingValue  string `yaml:"pendingValue"`
+	// IdentityColumns are the header columns whose raw text identifies a
+	// transaction across exports (ADR 0011). Only fields the bank never
+	// changes on a booked row belong here.
+	IdentityColumns []string          `yaml:"identityColumns"`
+	Mappings        map[string]string `yaml:"mappings"`
 }
 
 // Comma returns the delimiter as a rune for csv.Reader. Valid only after
