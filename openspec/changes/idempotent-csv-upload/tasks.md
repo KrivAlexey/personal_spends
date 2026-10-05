@@ -8,9 +8,9 @@ Test-first per CLAUDE.md: each group commits its failing table tests before the 
 
 ## 2. Parser: pending filter and identity
 
-- [ ] 2.1 Failing table tests for `ParseCSV` with an anonymized 18-column Sparkasse fixture covering: pending rows skipped and counted; booked row parsed with booking date; identical ID for the same row across two parses; IDs differ when only `Auftragskonto` differs; IDs equal when only `Kategorie` or `Info` differs; whitespace-only differences ignored; two identical rows get `-0` and `-1`; missing identity column fails before any row; bank without a pending marker imports all rows
-- [ ] 2.2 Add `ID` to `categorizer.Transaction`
-- [ ] 2.3 Change `ParseCSV` to return `ParseResult{Transactions, PendingSkipped}`; resolve identity and pending column indexes from the header; compute `sha256(trimmed cells joined by \x1f)[:16] + "-" + n` with a per-call occurrence counter
+- [x] 2.1 Failing table tests for `ParseCSV` with an anonymized 18-column Sparkasse fixture covering: pending rows skipped and counted; booked row parsed with booking date; identical ID for the same row across two parses; IDs differ when only `Auftragskonto` differs; IDs equal when only `Kategorie` or `Info` differs; whitespace-only differences ignored; two identical rows get `-0` and `-1`; missing identity column fails before any row; bank without a pending marker imports all rows
+- [x] 2.2 Add `ID` to `categorizer.Transaction`
+- [x] 2.3 Change `ParseCSV` to return `ParseResult{Transactions, PendingSkipped}`; resolve identity and pending column indexes from the header; compute `sha256(trimmed cells joined by \x1f)[:16] + "-" + n` with a per-call occurrence counter
 
 ## 3. Storage: known-ID lookup
 
