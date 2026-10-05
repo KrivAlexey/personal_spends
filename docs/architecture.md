@@ -74,14 +74,22 @@ Three thin `main.go` files, all wiring up the same `internal/` packages:
 ```
 POST /uploads/csv  (multipart, field: "file")
   │
-  ├─ BankMappingProvider.GetMapping(bankName)   column mapping, delimiter,
-  │                              date and decimal format for that bank
-  ├─ Parser.ParseCSV(ctx, bankName, r)   pure Go CSV parsing using that mapping
-  ├─ for each batch of ~50       serial loop in v1, worker pool in step 2 (0007)
-  │     └─ categorizer.Categorize(batch)   one Claude Haiku call per batch
-  │           returns: category and confidence per transaction
-  └─ storage.SaveExpenses()      batch write to DynamoDB
+  └─ ingest.Importer.Import(ctx, bankName, r)            the loop, testable without HTTP
+        ├─ BankMappingProvider.GetMapping(bankName)  column mapping, delimiter, date and
+        │                              decimal format, pending marker, identity columns
+        ├─ Parser.ParseCSV(ctx, bankName, r)   drops pending rows, assigns each row its ID
+        │                              over the whole file (0011)
+        ├─ storage.KnownIDs(keys)      already stored → skipped, never re-categorized
+        ├─ for each batch of ~50       serial loop in v1, worker pool in step 2 (0007)
+        │     ├─ categorizer.Categorize(batch)   one Claude Haiku call per batch
+        │     │     returns: category and confidence per transaction
+        │     └─ storage.SaveExpenses()          batch write to DynamoDB
+        └─ returns { imported, already_known, pending_skipped }
 ```
+
+Re-uploading a file or an overlapping export imports only rows not stored before
+([0011](decisions/0011-transaction-identity-and-deduplication.md); spec: OpenSpec
+change `idempotent-csv-upload`). Pending, ingest and `KnownIDs` are planned, not built.
 
 Bank mappings are written by hand and committed to the repo
 (`internal/parser/bank_mappings.yaml`) — one entry per bank, added as a new
@@ -153,7 +161,7 @@ Single-table design. Access patterns drive the key structure.
 | Key | Type | Value |
 |-----|------|-------|
 | `PK` | Partition key | `EXPENSES` |
-| `SK` | Sort key | `<YYYY-MM-DD>#<uuid>` — enables date range queries |
+| `SK` | Sort key | `<YYYY-MM-DD>#<id>` — booking date, enables date range queries; `<id>` is the deterministic transaction ID from [0011](decisions/0011-transaction-identity-and-deduplication.md) |
 
 **Attributes per item**
 
@@ -173,7 +181,7 @@ Single-table design. Access patterns drive the key structure.
 | Key | Value |
 |-----|-------|
 | `GSI1PK` | `CAT#<category>` e.g. `CAT#groceries` |
-| `GSI1SK` | `<YYYY-MM-DD>#<uuid>` |
+| `GSI1SK` | `<YYYY-MM-DD>#<id>` (same as `SK`) |
 
 Enables: "show all grocery expenses in April", "sum transport costs for Q1".
 
