@@ -19,8 +19,8 @@ Test-first per CLAUDE.md: each group commits its failing table tests before the 
 
 ## 4. Ingest package
 
-- [ ] 4.1 Failing table tests for `Importer.Import` with fake parser, categorizer and store: all new rows; all known (no `Categorize` call, no save); mixed known and new (only new rows categorized and saved); pending count passed through; counts add up to the row total; batches of `batchSize`, including a partial last batch; categorizer error on batch N leaves batches before N saved and returns the error; `CreatedAt` from the injected clock
-- [ ] 4.2 Create `internal/ingest` with consumer-side `parser`/`store` interfaces, `Importer`, `Result` and `toExpense`; serial batch loop per ADR 0007
+- [x] 4.1 Failing table tests for `Importer.Import` with fake parser, categorizer and store: all new rows; all known (no `Categorize` call, no save); mixed known and new (only new rows categorized and saved); pending count passed through; counts add up to the row total; batches of `batchSize`, including a partial last batch; categorizer error on batch N leaves batches before N saved and returns the error; `CreatedAt` from the injected clock
+- [x] 4.2 Create `internal/ingest` with consumer-side `parser`/`store` interfaces, `Importer`, `Result` and `toExpense`; serial batch loop per ADR 0007
 
 ## 5. Docs and verification
 
