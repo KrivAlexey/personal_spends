@@ -169,6 +169,19 @@ All endpoints require `X-API-Key` header.
 | `GET` | `/expenses/summary` | Spending totals grouped by category (`from`, `to` params) |
 | `GET` | `/categories` | List configured categories |
 
+Amounts are EUR only in v1; multi-currency is added if needed.
+
+---
+
+## MCP Tools (v1)
+
+| Tool | Description |
+|------|-------------|
+| `get_expenses` | Query expenses by date range, category, or amount |
+| `get_summary` | Spending totals grouped by category for a period |
+| `list_categories` | List all configured categories |
+| `add_expense` | Manually add a single expense record |
+
 ---
 
 ## Worker Pool Design (step 2, not in v1)
@@ -208,10 +221,13 @@ collect from results chan ──► storage.SaveExpenses()
 
 ---
 
-## Later Changes (for reference)
+## Later Changes (the backlog, in order)
 
 0. **Worker pool:** replace the serial batch loop with a bounded pool of goroutines fed by a channel, results collected before the DynamoDB write. First step after v1 runs end to end.
 1. **Receipt / bill images:** `POST /uploads/image` stores to S3 (30-day lifecycle) and a Vision call extracts `[]Transaction`, which then takes the same path as CSV rows. Adds the S3 bucket to Terraform and a method back onto `Categorizer`.
 2. **SQS fan-out:** S3 event on CSV upload triggers SQS. Lambda reads SQS batches instead of the whole file. Worker pool moves from intra-Lambda goroutines to parallel Lambda invocations.
 3. **RDS PostgreSQL:** `CategoryProvider` swaps from YAML to Postgres. Adds `categories`, `vendor_rules`, and `budgets` tables. Lambda gets RDS Proxy for connection pooling. Requires VPC in Terraform.
 4. **Bedrock:** `Categorizer` swaps from Anthropic SDK to `BedrockCategorizer` using `InvokeModelWithResponseStream`. Model ID configurable via env var, no changes in callers.
+5. **MCP SSE transport:** make the MCP server reachable from claude.ai and other remote agents.
+6. **On-demand GPU:** vLLM on spot EC2, brought up only during processing, for self-hosted model experiments (`VLLMCategorizer`).
+7. **Runtime bank-mapping detection:** Claude reads the first N rows of an unknown bank's CSV and returns the column layout, persisted as a new mapping behind `BankMappingProvider` instead of hand-editing the YAML.
