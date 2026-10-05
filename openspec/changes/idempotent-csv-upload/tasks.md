@@ -14,8 +14,8 @@ Test-first per CLAUDE.md: each group commits its failing table tests before the 
 
 ## 3. Storage: known-ID lookup
 
-- [ ] 3.1 Failing tests with the fake `dynamoDBAPI`: empty input; mix of known and unknown keys; more than 100 keys split into chunks; `UnprocessedKeys` retried, then an error after `MaxRetryAttempts`; client error wrapped; context cancelled
-- [ ] 3.2 Add `BatchGetItem` to `dynamoDBAPI` and implement `KnownIDs(ctx, []ExpenseKey) (map[string]bool, error)` with SK-only projection and the shared retry/backoff
+- [x] 3.1 Failing tests with the fake `dynamoDBAPI`: empty input; mix of known and unknown keys; more than 100 keys split into chunks; `UnprocessedKeys` retried, then an error after `MaxRetryAttempts`; client error wrapped; context cancelled
+- [x] 3.2 Add `BatchGetItem` to `dynamoDBAPI` and implement `KnownIDs(ctx, []ExpenseKey) (map[string]bool, error)` with SK-only projection and the shared retry/backoff
 
 ## 4. Ingest package
 

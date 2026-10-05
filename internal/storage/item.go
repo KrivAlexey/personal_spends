@@ -27,9 +27,14 @@ type expenseItem struct {
 	CreatedAt      string  `dynamodbav:"created_at"`
 }
 
+// sortKey is the SK (and GSI1SK) of an expense: "<YYYY-MM-DD>#<id>".
+func sortKey(date time.Time, id string) string {
+	return fmt.Sprintf("%s#%s", date.Format("2006-01-02"), id)
+}
+
 // newExpenseItem maps a domain Expense onto the DynamoDB table schema.
 func newExpenseItem(e Expense) expenseItem {
-	sk := fmt.Sprintf("%s#%s", e.Date.Format("2006-01-02"), e.ID)
+	sk := sortKey(e.Date, e.ID)
 
 	return expenseItem{
 		PK:             expensesPK,

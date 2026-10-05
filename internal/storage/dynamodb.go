@@ -14,6 +14,7 @@ import (
 
 const (
 	MaxBatchItems    = 25
+	MaxBatchGetKeys  = 100
 	MaxRetryAttempts = 3
 )
 
@@ -43,9 +44,28 @@ type ExpenseKey struct {
 	ID   string
 }
 
-// KnownIDs reports which of keys are already stored, keyed by ID.
+// KnownIDs reports which of keys are already stored, keyed by ID. It reads
+// only the sort key of each item, in BatchGetItem chunks of MaxBatchGetKeys.
 func (store *Store) KnownIDs(ctx context.Context, keys []ExpenseKey) (map[string]bool, error) {
-	return map[string]bool{}, nil
+	known := make(map[string]bool)
+	for chunk := range slices.Chunk(keys, MaxBatchGetKeys) {
+		idBySK := make(map[string]string, len(chunk))
+		reqKeys := make([]map[string]types.AttributeValue, len(chunk))
+		for i, k := range chunk {
+			sk := sortKey(k.Date, k.ID)
+			idBySK[sk] = k.ID
+			reqKeys[i] = map[string]types.AttributeValue{
+				"PK": &types.AttributeValueMemberS{Value: expensesPK},
+				"SK": &types.AttributeValueMemberS{Value: sk},
+			}
+		}
+
+		err := store.getChunkWithRetries(ctx, reqKeys, func(sk string) { known[idBySK[sk]] = true })
+		if err != nil {
+			return nil, fmt.Errorf("look up known expenses: %w", err)
+		}
+	}
+	return known, nil
 }
 
 type Store struct {
@@ -127,13 +147,50 @@ func (store *Store) writeChunkWithRetries(ctx context.Context, requests []types.
 		}
 		requestItems = output.UnprocessedItems
 
-		backoff := time.Duration(attempt+1) * 100 * time.Millisecond
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("batch write cancelled: %w", ctx.Err())
-		case <-time.After(backoff):
+		if err := waitBackoff(ctx, attempt); err != nil {
+			return fmt.Errorf("batch write cancelled: %w", err)
 		}
 	}
 
 	return fmt.Errorf("batch write: %d items still unprocessed after %d attempts", len(requestItems[store.table]), MaxRetryAttempts)
+}
+
+// waitBackoff sleeps before retry attempt+1, or returns ctx's error if it ends first.
+func waitBackoff(ctx context.Context, attempt int) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(time.Duration(attempt+1) * 100 * time.Millisecond):
+		return nil
+	}
+}
+
+func (store *Store) getChunkWithRetries(ctx context.Context, keys []map[string]types.AttributeValue, found func(sk string)) error {
+	requestItems := map[string]types.KeysAndAttributes{
+		store.table: {Keys: keys, ProjectionExpression: aws.String("SK")},
+	}
+
+	for attempt := 0; attempt < MaxRetryAttempts; attempt++ {
+		output, err := store.client.BatchGetItem(ctx, &dynamodb.BatchGetItemInput{
+			RequestItems: requestItems,
+		})
+		if err != nil {
+			return fmt.Errorf("batch get item: %w", err)
+		}
+		for _, item := range output.Responses[store.table] {
+			if sk, ok := item["SK"].(*types.AttributeValueMemberS); ok {
+				found(sk.Value)
+			}
+		}
+		if len(output.UnprocessedKeys) == 0 {
+			return nil
+		}
+		requestItems = output.UnprocessedKeys
+
+		if err := waitBackoff(ctx, attempt); err != nil {
+			return fmt.Errorf("batch get cancelled: %w", err)
+		}
+	}
+
+	return fmt.Errorf("batch get: %d keys still unprocessed after %d attempts", len(requestItems[store.table].Keys), MaxRetryAttempts)
 }
