@@ -20,4 +20,4 @@ The MCP server is a local Go binary (`cmd/mcp/`) that communicates via stdio. It
 ## Consequences
 
 - The MCP server only works on the local machine where the binary is installed. It cannot be used from claude.ai web or other remote agents without adding an SSE transport layer.
-- Phase 2 (optional): wrap the same tool handlers in an SSE HTTP server for remote access. The tool logic stays unchanged.
+- MCP SSE transport (backlog): wrap the same tool handlers in an SSE HTTP server for remote access. The tool logic stays unchanged.

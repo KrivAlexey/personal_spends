@@ -8,28 +8,29 @@ v1 is the smallest end-to-end path: CSV upload, serial categorization, DynamoDB 
 
 ## Where things are documented
 
-- `docs/architecture.md` — system diagram, request flows, interfaces, data model, API, MCP tools, configuration, and the ordered list of later changes (the backlog)
+- `docs/architecture.md` — implementation status, system diagram, request flows, interfaces, data model, API, MCP tools, configuration, and the ordered list of later changes (the backlog)
 - `docs/decisions/` — ADRs, one per design decision
-- `openspec/` — specs and change proposals
+- `openspec/` — behavior specs only: REST/MCP contracts, the `Categorizer` contract, CSV parsing rules. Changes to them go through `/opsx:propose` → apply → archive
 
 Read the relevant doc before changing a subsystem; update it in the same PR when the change alters what it says.
 
 ## Project Structure
 
 ```
-cmd/          lambda/, server/ (localhost:8080), mcp/ (stdio) — thin main.go files
-internal/     handler, categorizer, parser, storage, categories, mcp
+cmd/          lambda/, server/ (localhost:8080), mcp/ (stdio) — thin main.go files (not started)
+internal/     categorizer, parser, storage, categories; handler, mcp (not started)
 terraform/    flat main.tf
 docs/         architecture.md, decisions/
+openspec/     specs/, changes/
 samples/      test fixtures — fake data only
 ```
 
 ## Development
 
-Prerequisites: Go 1.22+, AWS CLI configured, Terraform 1.6+, `ANTHROPIC_API_KEY` in `.env`.
+Prerequisites: Go 1.26+ (per `go.mod`), AWS CLI configured, Terraform 1.6+, `ANTHROPIC_API_KEY` in `.env`.
 
 ```bash
-go run ./cmd/server        # HTTP server on localhost:8080
+go run ./cmd/server        # HTTP server on localhost:8080 (once cmd/server exists)
 go build ./... && go vet ./... && go test ./...
 cd terraform && terraform init && terraform plan   # apply only when asked
 ```
@@ -41,7 +42,9 @@ cd terraform && terraform init && terraform plan   # apply only when asked
 - `context.Context` as the first argument in every function that does I/O
 - No global state — dependencies injected via structs
 - Table-driven tests in `_test.go` files alongside the code they test
-- Interfaces defined in the package that uses them, not the package that implements them
+- Domain interfaces with planned multiple implementations (`Categorizer`, `CategoryProvider`, `BankMappingProvider`) live in their domain package, next to the shared types and sentinel errors
+- Narrow interfaces a consumer needs only for itself (like `storage.dynamoDBAPI`) are unexported and defined in the consuming package
+- Constructors accept interfaces and return concrete types
 
 ## Working mode
 
