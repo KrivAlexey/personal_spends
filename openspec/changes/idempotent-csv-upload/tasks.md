@@ -2,9 +2,9 @@ Test-first per CLAUDE.md: each group commits its failing table tests before the 
 
 ## 1. Mapping settings
 
-- [ ] 1.1 Failing tests for mapping validation: valid Sparkasse entry; empty `identityColumns`; duplicate identity column; only `pendingColumn` or only `pendingValue` set; no pending settings (valid)
-- [ ] 1.2 Add `PendingColumn`, `PendingValue`, `IdentityColumns` to `BankMapping` and validate them in `applyDefaults`
-- [ ] 1.3 Add Sparkasse's `pendingColumn: Info`, `pendingValue: "Umsatz vorgemerkt"` and `identityColumns` (every column except `Info` and `Kategorie`) to `bank_mappings.yaml`; extend `TestFileMappingProvider_CommittedMappings` to cover them
+- [x] 1.1 Failing tests for mapping validation: valid Sparkasse entry; empty `identityColumns`; duplicate identity column; only `pendingColumn` or only `pendingValue` set; no pending settings (valid)
+- [x] 1.2 Add `PendingColumn`, `PendingValue`, `IdentityColumns` to `BankMapping` and validate them in `applyDefaults`
+- [x] 1.3 Add Sparkasse's `pendingColumn: Info`, `pendingValue: "Umsatz vorgemerkt"` and `identityColumns` (every column except `Info` and `Kategorie`) to `bank_mappings.yaml`; extend `TestFileMappingProvider_CommittedMappings` to cover them
 
 ## 2. Parser: pending filter and identity
 

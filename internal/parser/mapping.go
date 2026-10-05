@@ -55,6 +55,22 @@ func (mapping *BankMapping) applyDefaults() error {
 	if mapping.DecimalSeparator != "." && mapping.DecimalSeparator != "," {
 		return fmt.Errorf("bank %s: decimalSeparator must be \".\" or \",\", got %q", mapping.BankName, mapping.DecimalSeparator)
 	}
+	if (mapping.PendingColumn == "") != (mapping.PendingValue == "") {
+		return fmt.Errorf("bank %s: pendingColumn and pendingValue must be set together", mapping.BankName)
+	}
+	if len(mapping.IdentityColumns) == 0 {
+		return fmt.Errorf("bank %s: identityColumns must not be empty", mapping.BankName)
+	}
+	seen := make(map[string]bool, len(mapping.IdentityColumns))
+	for _, col := range mapping.IdentityColumns {
+		if col == "" {
+			return fmt.Errorf("bank %s: identityColumns contains an empty name", mapping.BankName)
+		}
+		if seen[col] {
+			return fmt.Errorf("bank %s: identityColumns lists %q twice", mapping.BankName, col)
+		}
+		seen[col] = true
+	}
 	return nil
 }
 
