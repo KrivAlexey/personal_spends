@@ -20,17 +20,24 @@ func NewParser(mappingProvider BankMappingProvider) *Parser {
 	return &Parser{mappingProvider: mappingProvider}
 }
 
-func (parser *Parser) ParseCSV(ctx context.Context, bankName string, r io.Reader) ([]categorizer.Transaction, error) {
+// ParseResult is what one export yields: its booked transactions and how many
+// pending rows were skipped.
+type ParseResult struct {
+	Transactions   []categorizer.Transaction
+	PendingSkipped int
+}
+
+func (parser *Parser) ParseCSV(ctx context.Context, bankName string, r io.Reader) (ParseResult, error) {
 	mapping, err := parser.mappingProvider.GetMapping(ctx, bankName)
 	if err != nil {
-		return nil, fmt.Errorf("parser: csv schema is not found for bank: %s: %w", bankName, err) // todo detect and save schema for a new Bank
+		return ParseResult{}, fmt.Errorf("parser: csv schema is not found for bank: %s: %w", bankName, err) // todo detect and save schema for a new Bank
 	}
 
 	csvReader := csv.NewReader(r)
 	csvReader.Comma = mapping.Comma()
 	header, err := csvReader.Read()
 	if err != nil {
-		return nil, fmt.Errorf("parser: unable to read a header row: %w", err)
+		return ParseResult{}, fmt.Errorf("parser: unable to read a header row: %w", err)
 	}
 
 	fieldByCol := make([]string, len(header))
@@ -38,7 +45,8 @@ func (parser *Parser) ParseCSV(ctx context.Context, bankName string, r io.Reader
 		fieldByCol[i] = mapping.Mappings[col]
 	}
 
-	return ParseWithMapping(ctx, mapping, fieldByCol, csvReader)
+	transactions, err := ParseWithMapping(ctx, mapping, fieldByCol, csvReader)
+	return ParseResult{Transactions: transactions}, err
 }
 
 func ParseWithMapping(ctx context.Context, mapping BankMapping, fieldByCol []string, r *csv.Reader) ([]categorizer.Transaction, error) {

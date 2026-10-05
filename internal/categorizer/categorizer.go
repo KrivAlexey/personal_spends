@@ -10,6 +10,8 @@ type Categorizer interface {
 }
 
 type Transaction struct {
+	// ID identifies the transaction across exports (ADR 0011); set by the parser.
+	ID          string
 	Date        time.Time
 	Merchant    string
 	Amount      float64
