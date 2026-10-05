@@ -55,20 +55,37 @@ Explain the concept, give me the failing tests or skeleton, and review what I wr
 
 In either mode, ask before `terraform apply`, before anything that costs money or touches real AWS resources, and before changing a core interface (`Categorizer`, `CategoryProvider`, `BankMappingProvider`).
 
+## Test-first workflow
+
+Every delegated code change, bug fix or feature alike:
+
+1. **Red:** write table-driven tests covering the normal path, edge cases and error paths. Run them and confirm they fail for the right reason: a failing assertion, not a build error or typo. Commit the tests on their own (`#N failing tests for …`), so checking out that commit shows red.
+2. **Green:** implement until the tests pass, then run the full `go build ./... && go vet ./... && go test ./...`. Commit the implementation separately.
+3. **CI:** open the PR, wait with `gh pr checks <PR> --watch`, and report done only when `ci` is green. If it fails, fix it, push and wait again.
+
+Rules while doing it:
+
+- **Never weaken a test to make it pass.** If a test is wrong, fix it in its own commit and explain why in the PR. A weakened assertion, `t.Skip` or deleted case is a finding, not a fix.
+- **Stop and ask** if the tests still fail after a few honest attempts, or if passing them would need a core interface change, a new dependency or a skipped test.
+- **Tests stay offline:** no real Anthropic or AWS calls. Use fakes behind interfaces (like `storage.dynamoDBAPI`). A live test runs only when its environment variable is set, like the existing `ANTHROPIC_API_KEY` skip.
+- **Exceptions:** docs/config-only changes need no tests. Terraform gets `terraform fmt -check && terraform validate && terraform plan`. Thin `cmd/*/main.go` wiring is checked by actually running it. The PR says which exception applies and what was run instead.
+
 ## Definition of done
 
 A change is done when all of these hold:
 
 1. `go build ./... && go vet ./... && go test ./...` passes
-2. New logic has table-driven tests, including the error paths
+2. Code changes followed the test-first workflow above: the failing-tests commit comes before the implementation commit
 3. Docs are verified against the change, before the PR is opened:
    - `docs/architecture.md`: Implementation Status, request flows, interfaces, data model, API, MCP tools, configuration and backlog still describe the code
    - `docs/decisions/`: a new or reversed decision gets a new ADR; a superseded ADR gets its status updated, not rewritten
    - `openspec/specs/`: a change to observable behavior (REST/MCP contracts, `Categorizer` contract, CSV parsing rules) goes through an OpenSpec change, archived once implemented
    - `README.md` and `CLAUDE.md`: status, setup, commands and conventions still hold
    - The PR body says which docs changed, or "Docs: no change needed" with the reason
-4. It is committed on its own branch and has an open PR that links its issue
+4. It is committed on its own branch and has an open PR that links its issue, with every section of `.github/pull_request_template.md` filled in
 5. No real bank data or secrets in the diff
+6. The PR's **Not verified** section lists anything assumed rather than checked, including facts in docs that came from neither the code nor the owner
+7. `ci` is green on the PR's latest commit
 
 ## Git workflow
 
