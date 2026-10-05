@@ -29,6 +29,23 @@ type dynamoDBAPI interface {
 		params *dynamodb.BatchWriteItemInput,
 		optFns ...func(*dynamodb.Options),
 	) (*dynamodb.BatchWriteItemOutput, error)
+
+	BatchGetItem(
+		ctx context.Context,
+		params *dynamodb.BatchGetItemInput,
+		optFns ...func(*dynamodb.Options),
+	) (*dynamodb.BatchGetItemOutput, error)
+}
+
+// ExpenseKey addresses one stored expense: SK = "<date>#<ID>".
+type ExpenseKey struct {
+	Date time.Time
+	ID   string
+}
+
+// KnownIDs reports which of keys are already stored, keyed by ID.
+func (store *Store) KnownIDs(ctx context.Context, keys []ExpenseKey) (map[string]bool, error) {
+	return map[string]bool{}, nil
 }
 
 type Store struct {
