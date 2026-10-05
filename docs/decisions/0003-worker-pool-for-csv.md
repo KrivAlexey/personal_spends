@@ -1,6 +1,6 @@
 # 0003 — Worker pool for CSV processing
 
-**Status:** Accepted
+**Status:** Accepted, deferred to step 2 by [0007](0007-serial-loop-for-v1.md). v1 walks the batches in a serial loop; this pool replaces it once the end-to-end path works.
 
 ## Context
 
@@ -19,5 +19,5 @@ Use a worker pool of goroutines to process CSV batches concurrently within a sin
 ## Consequences
 
 - Concurrency adds complexity: results arrive out of order and must be collected via a results channel. Error handling needs to account for partial failures.
-- Phase 2 replaces this pattern: when SQS fan-out is added, each Lambda invocation processes a single SQS batch sequentially. The goroutine concurrency moves to parallel Lambda invocations instead.
+- The SQS fan-out backlog item later replaces this pattern: once it lands, each Lambda invocation processes a single SQS batch sequentially. The goroutine concurrency moves to parallel Lambda invocations instead.
 - Pool size tuning may be needed depending on Claude tier rate limits.

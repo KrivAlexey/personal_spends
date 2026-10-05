@@ -1,32 +1,11 @@
 schema: spec-driven
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+context: |
+  Go backend (Go 1.26) for personal expense tracking: bank CSV upload, Claude
+  categorization, DynamoDB storage, REST API (API Gateway + Lambda) and a local
+  stdio MCP server. Conventions, git workflow and definition of done: CLAUDE.md.
+  Structure and backlog: docs/architecture.md. Decisions: docs/decisions/.
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
-
-# Per-operation guidance (optional)
-# Add advisory guidance for how apply and archive work should be conducted.
-# This is separate from artifact rules above.
-# Example:
-#   operations:
-#     apply:
-#       guidance:
-#         - Keep test summaries concise
-#     archive:
-#       guidance:
-#         - Summarize the archive outcome before finishing
+  OpenSpec is for changes to observable behavior only: REST/MCP contracts, the
+  Categorizer contract, CSV parsing rules. Decisions go in ADRs, structure in
+  docs/architecture.md, not in specs.

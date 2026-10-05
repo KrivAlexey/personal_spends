@@ -20,5 +20,5 @@ Use Lambda for all compute.
 ## Consequences
 
 - Max execution time is 15 minutes per invocation. Acceptable — even a 1,000-row CSV with batched Claude calls finishes well under that.
-- Adding VPC later (for RDS in Phase 2) will increase cold start time slightly. RDS Proxy mitigates this.
+- Adding VPC later (for RDS, a later backlog item in `docs/architecture.md`) will increase cold start time slightly. RDS Proxy mitigates this.
 - If workload grows significantly, migrating to ECS is straightforward: the same `internal/` packages work unchanged; only `cmd/lambda/main.go` is replaced.

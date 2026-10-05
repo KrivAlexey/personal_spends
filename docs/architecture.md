@@ -4,7 +4,21 @@
 
 `personal_spends` is a Go backend that accepts bank CSV exports, categorizes expenses using Claude AI, and stores structured results in DynamoDB. It exposes a REST API (API Gateway + Lambda) and a local MCP server (stdio) for AI agent queries.
 
-v1 is deliberately the smallest end-to-end path: CSV upload, serial categorization, DynamoDB write. The worker pool is step 2; receipt image extraction is backlog.
+v1 is deliberately the smallest end-to-end path: CSV upload, serial categorization, DynamoDB write ([0007](decisions/0007-serial-loop-for-v1.md), [0009](decisions/0009-csv-only-v1.md)). The worker pool is step 2; receipt image extraction is backlog.
+
+This document describes the v1 target. What is built so far:
+
+## Implementation Status
+
+| Area | State |
+|------|-------|
+| `internal/categories` | Built: `YamlCategoryProvider`, tested |
+| `internal/categorizer` | Built: `Claude`, tool-output validation tested; live API test skipped without `ANTHROPIC_API_KEY` |
+| `internal/parser` | Built: `Parser.ParseCSV` + `FileMappingProvider`; tests cover amount parsing only |
+| `internal/storage` | Built: `PutExpense`, `SaveExpenses` (batched, retried), tested. Not yet: `QueryExpenses` |
+| `internal/handler`, `internal/mcp`, `cmd/*` | Not started |
+| Terraform | DynamoDB table with GSI1 only. Not yet: Lambda, API Gateway |
+| Configuration (below) | Not read anywhere yet; arrives with `cmd/` |
 
 ---
 
@@ -62,8 +76,8 @@ POST /uploads/csv  (multipart, field: "file")
   │
   ├─ BankMappingProvider.GetMapping(bankName)   column mapping, delimiter,
   │                              date and decimal format for that bank
-  ├─ parser.ParseCSV()           pure Go CSV parsing using that mapping
-  ├─ for each batch of ~50       serial loop in v1, worker pool in step 2
+  ├─ Parser.ParseCSV(ctx, bankName, r)   pure Go CSV parsing using that mapping
+  ├─ for each batch of ~50       serial loop in v1, worker pool in step 2 (0007)
   │     └─ categorizer.Categorize(batch)   one Claude Haiku call per batch
   │           returns: category and confidence per transaction
   └─ storage.SaveExpenses()      batch write to DynamoDB
@@ -71,7 +85,8 @@ POST /uploads/csv  (multipart, field: "file")
 
 Bank mappings are written by hand and committed to the repo
 (`internal/parser/bank_mappings.yaml`) — one entry per bank, added as a new
-bank's export is encountered. An unknown `bankName` is an error, not a guess.
+bank's export is encountered. An unknown `bankName` is an error, not a guess
+([0008](decisions/0008-manual-bank-mappings.md)).
 Generating a mapping at runtime (Claude reads the first N rows and returns the
 column layout, result persisted as a new mapping) comes later; the
 `BankMappingProvider` interface is the seam for it.
@@ -92,7 +107,7 @@ Claude Code  ──stdio──►  cmd/mcp
 
 ## Core Interfaces
 
-Interfaces are defined in the package that uses them, not the package that implements them — keeps implementations swappable without touching call sites.
+These three domain interfaces each have more than one planned implementation, so each lives in its domain package next to the types and sentinel errors its implementations share (like `io.Reader`). Narrow interfaces a consumer needs only for itself are unexported in the consuming package, e.g. `storage.dynamoDBAPI` over the AWS client. Callers depend on the interface; constructors return concrete types.
 
 ```go
 // internal/categorizer/categorizer.go
@@ -105,19 +120,25 @@ type CategoryProvider interface {
     List(ctx context.Context) ([]Category, error)
     Get(ctx context.Context, name string) (Category, error)
 }
+
+// internal/parser/mapping.go
+type BankMappingProvider interface {
+    GetMapping(ctx context.Context, bankName string) (BankMapping, error)
+}
 ```
 
-**Planned implementations:**
+**Implementations:**
 
-| Interface | Phase 1 | Phase 2 | Phase 3 |
-|-----------|---------|---------|---------|
-| `Categorizer` | `AnthropicCategorizer` (Haiku) | `BedrockCategorizer` (Llama/Mistral) | `VLLMCategorizer` (on-demand GPU) |
-| `CategoryProvider` | `YAMLProvider` | `PostgresProvider` (RDS + RDS Proxy) | — |
+| Interface | v1 | Later (backlog) |
+|-----------|----|-----------------|
+| `Categorizer` | `Claude` (Haiku) | `BedrockCategorizer` (Llama/Mistral), `VLLMCategorizer` (on-demand GPU) |
+| `CategoryProvider` | `YamlCategoryProvider` | `PostgresProvider` (RDS + RDS Proxy) |
+| `BankMappingProvider` | `FileMappingProvider` (`bank_mappings.yaml`) | Runtime detection with Claude |
 
 Image extraction is intentionally absent from `Categorizer`. It comes back as
 its own method when the S3 bucket and the Claude Vision call are built together
 — an interface method with no implementation stops every implementation from
-satisfying the interface.
+satisfying the interface ([0009](decisions/0009-csv-only-v1.md)).
 
 ---
 
@@ -165,11 +186,14 @@ All endpoints require `X-API-Key` header.
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/uploads/csv` | Upload bank export CSV |
-| `GET` | `/expenses` | Query expenses (`from`, `to`, `category`, `limit` params) |
+| `GET` | `/expenses` | Query expenses (`from`, `to`, `category`, `min_amount`, `max_amount`, `limit` params) |
+| `POST` | `/expenses` | Add a single expense manually (JSON body with the expense fields) |
 | `GET` | `/expenses/summary` | Spending totals grouped by category (`from`, `to` params) |
 | `GET` | `/categories` | List configured categories |
 
-Amounts are EUR only in v1; multi-currency is added if needed.
+`min_amount` / `max_amount` filter the date- or category-keyed query result (a DynamoDB filter expression), so they never trigger a full scan.
+
+Amounts are EUR only in v1; multi-currency is added if needed ([0010](decisions/0010-eur-only-v1.md)).
 
 ---
 
@@ -177,19 +201,24 @@ Amounts are EUR only in v1; multi-currency is added if needed.
 
 | Tool | Description |
 |------|-------------|
-| `get_expenses` | Query expenses by date range, category, or amount |
-| `get_summary` | Spending totals grouped by category for a period |
-| `list_categories` | List all configured categories |
-| `add_expense` | Manually add a single expense record |
+Each tool is a thin client over one REST endpoint ([0005](decisions/0005-mcp-server-local.md)).
+
+| Tool | Description | Endpoint |
+|------|-------------|----------|
+| `get_expenses` | Query expenses by date range, category, or amount | `GET /expenses` |
+| `get_summary` | Spending totals grouped by category for a period | `GET /expenses/summary` |
+| `list_categories` | List all configured categories | `GET /categories` |
+| `add_expense` | Manually add a single expense record | `POST /expenses` |
 
 ---
 
 ## Worker Pool Design (step 2, not in v1)
 
-The plan for parallelizing the Claude API calls in CSV processing (I/O-bound).
-v1 walks the batches in a serial loop instead — the first upload is also the
-first time handler, parser, categorizer and storage run together, and a serial
-loop is far easier to debug. The pool replaces the loop once that path works.
+The plan for parallelizing the Claude API calls in CSV processing (I/O-bound,
+[0003](decisions/0003-worker-pool-for-csv.md)). v1 walks the batches in a serial
+loop instead ([0007](decisions/0007-serial-loop-for-v1.md)) — the first upload is
+also the first time handler, parser, categorizer and storage run together, and a
+serial loop is far easier to debug. The pool replaces the loop once that path works.
 
 ```
 CSV rows (N transactions)
@@ -223,11 +252,11 @@ collect from results chan ──► storage.SaveExpenses()
 
 ## Later Changes (the backlog, in order)
 
-0. **Worker pool:** replace the serial batch loop with a bounded pool of goroutines fed by a channel, results collected before the DynamoDB write. First step after v1 runs end to end.
-1. **Receipt / bill images:** `POST /uploads/image` stores to S3 (30-day lifecycle) and a Vision call extracts `[]Transaction`, which then takes the same path as CSV rows. Adds the S3 bucket to Terraform and a method back onto `Categorizer`.
-2. **SQS fan-out:** S3 event on CSV upload triggers SQS. Lambda reads SQS batches instead of the whole file. Worker pool moves from intra-Lambda goroutines to parallel Lambda invocations.
-3. **RDS PostgreSQL:** `CategoryProvider` swaps from YAML to Postgres. Adds `categories`, `vendor_rules`, and `budgets` tables. Lambda gets RDS Proxy for connection pooling. Requires VPC in Terraform.
-4. **Bedrock:** `Categorizer` swaps from Anthropic SDK to `BedrockCategorizer` using `InvokeModelWithResponseStream`. Model ID configurable via env var, no changes in callers.
-5. **MCP SSE transport:** make the MCP server reachable from claude.ai and other remote agents.
-6. **On-demand GPU:** vLLM on spot EC2, brought up only during processing, for self-hosted model experiments (`VLLMCategorizer`).
-7. **Runtime bank-mapping detection:** Claude reads the first N rows of an unknown bank's CSV and returns the column layout, persisted as a new mapping behind `BankMappingProvider` instead of hand-editing the YAML.
+1. **Worker pool:** replace the serial batch loop with a bounded pool of goroutines fed by a channel, results collected before the DynamoDB write. First step after v1 runs end to end.
+2. **Receipt / bill images:** `POST /uploads/image` stores to S3 (30-day lifecycle) and a Vision call extracts `[]Transaction`, which then takes the same path as CSV rows. Adds the S3 bucket to Terraform and a method back onto `Categorizer`.
+3. **SQS fan-out:** S3 event on CSV upload triggers SQS. Lambda reads SQS batches instead of the whole file. Worker pool moves from intra-Lambda goroutines to parallel Lambda invocations.
+4. **RDS PostgreSQL:** `CategoryProvider` swaps from YAML to Postgres. Adds `categories`, `vendor_rules`, and `budgets` tables. Lambda gets RDS Proxy for connection pooling. Requires VPC in Terraform.
+5. **Bedrock:** `Categorizer` swaps from Anthropic SDK to `BedrockCategorizer` using `InvokeModelWithResponseStream`. Model ID configurable via env var, no changes in callers.
+6. **MCP SSE transport:** make the MCP server reachable from claude.ai and other remote agents.
+7. **On-demand GPU:** vLLM on spot EC2, brought up only during processing, for self-hosted model experiments (`VLLMCategorizer`).
+8. **Runtime bank-mapping detection:** Claude reads the first N rows of an unknown bank's CSV and returns the column layout, persisted as a new mapping behind `BankMappingProvider` instead of hand-editing the YAML.

@@ -20,5 +20,5 @@ Use DynamoDB for expense records.
 ## Consequences
 
 - DynamoDB's query model is less flexible than SQL. Complex ad-hoc queries (e.g., "expenses between €50 and €100 in Q1") require a scan, which is slower and costs more reads.
-- Phase 2 adds PostgreSQL RDS for categories, vendor rules, and budgets — a relational model fits that data better. Expenses stay in DynamoDB.
+- The RDS PostgreSQL backlog item adds PostgreSQL for categories, vendor rules, and budgets — a relational model fits that data better. Expenses stay in DynamoDB.
 - Schema changes require manual data migration since DynamoDB is schemaless; discipline around attribute names is needed.
