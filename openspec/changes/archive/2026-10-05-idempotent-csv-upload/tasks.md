@@ -24,6 +24,6 @@ Test-first per CLAUDE.md: each group commits its failing table tests before the 
 
 ## 5. Docs and verification
 
-- [ ] 5.1 Update `docs/architecture.md`: Implementation Status (`ingest`, `KnownIDs`), and the parser line in Core Interfaces if its signature is shown
-- [ ] 5.2 `go build ./... && go vet ./... && go test ./...`; re-run `openspec validate idempotent-csv-upload --strict`
-- [ ] 5.3 Archive the change once implemented (`openspec archive idempotent-csv-upload`), creating `openspec/specs/csv-import/spec.md`
+- [x] 5.1 Update `docs/architecture.md`: Implementation Status (`ingest`, `KnownIDs`), and the parser line in Core Interfaces if its signature is shown
+- [x] 5.2 `go build ./... && go vet ./... && go test ./...`; re-run `openspec validate idempotent-csv-upload --strict`
+- [x] 5.3 Archive the change once implemented (`openspec archive idempotent-csv-upload`), creating `openspec/specs/csv-import/spec.md`
