@@ -7,7 +7,7 @@ import (
 	"os"
 	"unicode/utf8"
 
-	"go.yaml.in/yaml/v4"
+	"go.yaml.in/yaml/v3"
 )
 
 var ErrBankMappingNotFound = errors.New("parser: bank mapping not found")
