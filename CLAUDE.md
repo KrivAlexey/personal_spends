@@ -43,13 +43,14 @@ cd terraform && terraform init && terraform plan   # apply only when asked
 - Table-driven tests in `_test.go` files alongside the code they test
 - Interfaces defined in the package that uses them, not the package that implements them
 
-## Working mode: delegate by default
+## Working mode
 
-Claude implements: production code, tests, docs, Terraform, and the git workflow below, end to end. The owner reviews the PR.
+Default: you implement everything: code, tests, Terraform, docs.
+Learning mode: only when my request contains [learn]. Then don't write the code.
+Explain the concept, give me the failing tests or skeleton, and review what I write
+(findings ranked bug > risk > design > style, with file:line and a failing input).
 
-- This is still a learning project. Before non-trivial work (architecture, infrastructure, new abstractions), explain briefly **what** and **why**, with the alternatives considered. In the PR description, call out the Go and AWS concepts the change exercises.
-- Ask before `terraform apply`, before anything that costs money or touches real AWS resources, and before changing a core interface (`Categorizer`, `CategoryProvider`, `BankMappingProvider`).
-- If the owner says they want to write something by hand, stop and switch to review: findings ranked by severity, with `file:line` and a concrete failing input for each.
+In either mode, ask before `terraform apply`, before anything that costs money or touches real AWS resources, and before changing a core interface (`Categorizer`, `CategoryProvider`, `BankMappingProvider`).
 
 ## Definition of done
 
