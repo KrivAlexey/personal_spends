@@ -258,3 +258,35 @@ func TestParseCSV_MissingColumns(t *testing.T) {
 		})
 	}
 }
+
+func TestParseCSV_Encoding(t *testing.T) {
+	sparkasse := committedSparkasse(t)
+	utf8Bank := sparkasse
+	utf8Bank.BankName, utf8Bank.Encoding = "utf8bank", "utf-8"
+
+	const want = "Grundpreis für Kontoführung"
+	row := with(bookedRow(), map[string]string{"Verwendungszweck": want})
+	utf8CSV := csvOf(sparkasseHeader, row)
+	latin1CSV := strings.NewReplacer("ü", "\xfc").Replace(utf8CSV)
+
+	tests := []struct {
+		name    string
+		mapping BankMapping
+		csv     string
+	}{
+		{name: "iso-8859-1 export decoded", mapping: sparkasse, csv: latin1CSV},
+		{name: "utf-8 export read as is", mapping: utf8Bank, csv: utf8CSV},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := mustParse(t, tt.mapping, tt.csv)
+			if len(res.Transactions) != 1 {
+				t.Fatalf("got %d transactions, want 1", len(res.Transactions))
+			}
+			if got := res.Transactions[0].Description; got != want {
+				t.Errorf("Description = %q, want %q", got, want)
+			}
+		})
+	}
+}

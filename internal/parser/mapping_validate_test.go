@@ -26,6 +26,9 @@ func TestBankMapping_ApplyDefaults(t *testing.T) {
 		{name: "empty identity column name", mutate: func(m *BankMapping) { m.IdentityColumns = []string{"Date", ""} }, wantErr: true},
 		{name: "pending column without value", mutate: func(m *BankMapping) { m.PendingValue = "" }, wantErr: true},
 		{name: "pending value without column", mutate: func(m *BankMapping) { m.PendingColumn = "" }, wantErr: true},
+		{name: "utf-8 encoding", mutate: func(m *BankMapping) { m.Encoding = "utf-8" }},
+		{name: "iso-8859-1 encoding", mutate: func(m *BankMapping) { m.Encoding = "iso-8859-1" }},
+		{name: "unsupported encoding", mutate: func(m *BankMapping) { m.Encoding = "windows-1251" }, wantErr: true},
 	}
 
 	for _, tt := range tests {
@@ -35,6 +38,9 @@ func TestBankMapping_ApplyDefaults(t *testing.T) {
 			err := m.applyDefaults()
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("applyDefaults() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if err == nil && m.Encoding == "" {
+				t.Errorf("Encoding left empty, want a default")
 			}
 		})
 	}

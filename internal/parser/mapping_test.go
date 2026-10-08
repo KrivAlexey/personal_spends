@@ -20,6 +20,9 @@ func TestFileMappingProvider_CommittedMappings(t *testing.T) {
 		t.Errorf("sparkasse = delimiter %q, decimal %q, date %q; want ';', ',', 02.01.06",
 			got.Delimiter, got.DecimalSeparator, got.DateFormat)
 	}
+	if got.Encoding != "iso-8859-1" {
+		t.Errorf("sparkasse encoding = %q, want iso-8859-1", got.Encoding)
+	}
 	if got.Mappings["Betrag"] != "Amount" {
 		t.Errorf("sparkasse Betrag maps to %q, want Amount", got.Mappings["Betrag"])
 	}

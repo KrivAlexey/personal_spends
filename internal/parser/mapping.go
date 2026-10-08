@@ -19,6 +19,9 @@ type BankMappingList struct {
 type BankMapping struct {
 	BankName   string `yaml:"bankName"`
 	DateFormat string `yaml:"dateFormat"`
+	// Encoding is the export's character set: "utf-8" (default) or
+	// "iso-8859-1".
+	Encoding string `yaml:"encoding"`
 	// Delimiter is the CSV field separator, defaults to ",".
 	Delimiter string `yaml:"delimiter"`
 	// DecimalSeparator is "." or ",". With ",", amounts are read as German
