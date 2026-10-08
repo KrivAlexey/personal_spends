@@ -46,6 +46,12 @@ func (mapping BankMapping) Comma() rune {
 }
 
 func (mapping *BankMapping) applyDefaults() error {
+	if mapping.Encoding == "" {
+		mapping.Encoding = "utf-8"
+	}
+	if mapping.Encoding != "utf-8" && mapping.Encoding != "iso-8859-1" {
+		return fmt.Errorf("bank %s: encoding must be \"utf-8\" or \"iso-8859-1\", got %q", mapping.BankName, mapping.Encoding)
+	}
 	if mapping.Delimiter == "" {
 		mapping.Delimiter = ","
 	}
