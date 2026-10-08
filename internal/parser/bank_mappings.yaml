@@ -3,6 +3,28 @@ allMappings:
     dateFormat: "02.01.06"
     delimiter: ";"
     decimalSeparator: ","
+    pendingColumn: Info
+    pendingValue: "Umsatz vorgemerkt"
+    # Every column except Info (changes from pending to booked) and
+    # Kategorie (Sparkasse's own category, re-run by the bank or edited
+    # by the owner). See docs/decisions/0011.
+    identityColumns:
+      - Auftragskonto
+      - Buchungstag
+      - Valutadatum
+      - Buchungstext
+      - Verwendungszweck
+      - Glaeubiger ID
+      - Mandatsreferenz
+      - Kundenreferenz (End-to-End)
+      - Sammlerreferenz
+      - Lastschrift Ursprungsbetrag
+      - Auslagenersatz Ruecklastschrift
+      - Beguenstigter/Zahlungspflichtiger
+      - Kontonummer/IBAN
+      - BIC (SWIFT-Code)
+      - Betrag
+      - Waehrung
     mappings:
       Buchungstag: Date
       Beguenstigter/Zahlungspflichtiger: Merchant

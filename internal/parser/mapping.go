@@ -23,8 +23,16 @@ type BankMapping struct {
 	Delimiter string `yaml:"delimiter"`
 	// DecimalSeparator is "." or ",". With ",", amounts are read as German
 	// style ("1.234,56"): dots are thousands separators and get stripped.
-	DecimalSeparator string            `yaml:"decimalSeparator"`
-	Mappings         map[string]string `yaml:"mappings"`
+	DecimalSeparator string `yaml:"decimalSeparator"`
+	// PendingColumn and PendingValue mark rows the bank hasn't booked yet;
+	// those rows are skipped. Both set or both empty.
+	PendingColumn string `yaml:"pendingColumn"`
+	PendingValue  string `yaml:"pendingValue"`
+	// IdentityColumns are the header columns whose raw text identifies a
+	// transaction across exports (ADR 0011). Only fields the bank never
+	// changes on a booked row belong here.
+	IdentityColumns []string          `yaml:"identityColumns"`
+	Mappings        map[string]string `yaml:"mappings"`
 }
 
 // Comma returns the delimiter as a rune for csv.Reader. Valid only after
@@ -46,6 +54,22 @@ func (mapping *BankMapping) applyDefaults() error {
 	}
 	if mapping.DecimalSeparator != "." && mapping.DecimalSeparator != "," {
 		return fmt.Errorf("bank %s: decimalSeparator must be \".\" or \",\", got %q", mapping.BankName, mapping.DecimalSeparator)
+	}
+	if (mapping.PendingColumn == "") != (mapping.PendingValue == "") {
+		return fmt.Errorf("bank %s: pendingColumn and pendingValue must be set together", mapping.BankName)
+	}
+	if len(mapping.IdentityColumns) == 0 {
+		return fmt.Errorf("bank %s: identityColumns must not be empty", mapping.BankName)
+	}
+	seen := make(map[string]bool, len(mapping.IdentityColumns))
+	for _, col := range mapping.IdentityColumns {
+		if col == "" {
+			return fmt.Errorf("bank %s: identityColumns contains an empty name", mapping.BankName)
+		}
+		if seen[col] {
+			return fmt.Errorf("bank %s: identityColumns lists %q twice", mapping.BankName, col)
+		}
+		seen[col] = true
 	}
 	return nil
 }

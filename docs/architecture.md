@@ -14,8 +14,9 @@ This document describes the v1 target. What is built so far:
 |------|-------|
 | `internal/categories` | Built: `YamlCategoryProvider`, tested |
 | `internal/categorizer` | Built: `Claude`, tool-output validation tested; live API test skipped without `ANTHROPIC_API_KEY` |
-| `internal/parser` | Built: `Parser.ParseCSV` + `FileMappingProvider`; tests cover amount parsing only |
-| `internal/storage` | Built: `PutExpense`, `SaveExpenses` (batched, retried), tested. Not yet: `QueryExpenses` |
+| `internal/parser` | Built: `Parser.ParseCSV` (pending filter, transaction IDs) + `FileMappingProvider`, tested |
+| `internal/storage` | Built: `PutExpense`, `SaveExpenses` (batched, retried), `KnownIDs`, tested. Not yet: `QueryExpenses` |
+| `internal/ingest` | Built: `Importer.Import` (serial loop, skips known rows), tested with fakes |
 | `internal/handler`, `internal/mcp`, `cmd/*` | Not started |
 | Terraform | DynamoDB table with GSI1 only. Not yet: Lambda, API Gateway |
 | Configuration (below) | Not read anywhere yet; arrives with `cmd/` |
@@ -88,8 +89,9 @@ POST /uploads/csv  (multipart, field: "file")
 ```
 
 Re-uploading a file or an overlapping export imports only rows not stored before
-([0011](decisions/0011-transaction-identity-and-deduplication.md); spec: OpenSpec
-change `idempotent-csv-upload`). Pending, ingest and `KnownIDs` are planned, not built.
+([0011](decisions/0011-transaction-identity-and-deduplication.md); spec:
+[`openspec/specs/csv-import`](../openspec/specs/csv-import/spec.md)). Everything below
+`Import` is built; the HTTP handler calling it is not.
 
 Bank mappings are written by hand and committed to the repo
 (`internal/parser/bank_mappings.yaml`) — one entry per bank, added as a new
