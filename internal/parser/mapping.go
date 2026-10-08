@@ -19,6 +19,9 @@ type BankMappingList struct {
 type BankMapping struct {
 	BankName   string `yaml:"bankName"`
 	DateFormat string `yaml:"dateFormat"`
+	// Encoding is the export's character set: "utf-8" (default) or
+	// "iso-8859-1".
+	Encoding string `yaml:"encoding"`
 	// Delimiter is the CSV field separator, defaults to ",".
 	Delimiter string `yaml:"delimiter"`
 	// DecimalSeparator is "." or ",". With ",", amounts are read as German
@@ -43,6 +46,12 @@ func (mapping BankMapping) Comma() rune {
 }
 
 func (mapping *BankMapping) applyDefaults() error {
+	if mapping.Encoding == "" {
+		mapping.Encoding = "utf-8"
+	}
+	if mapping.Encoding != "utf-8" && mapping.Encoding != "iso-8859-1" {
+		return fmt.Errorf("bank %s: encoding must be \"utf-8\" or \"iso-8859-1\", got %q", mapping.BankName, mapping.Encoding)
+	}
 	if mapping.Delimiter == "" {
 		mapping.Delimiter = ","
 	}

@@ -35,6 +35,13 @@ func (parser *Parser) ParseCSV(ctx context.Context, bankName string, r io.Reader
 		return ParseResult{}, fmt.Errorf("parser: csv schema is not found for bank: %s: %w", bankName, err) // todo detect and save schema for a new Bank
 	}
 
+	if mapping.Encoding == "iso-8859-1" {
+		r, err = decodeLatin1(r)
+		if err != nil {
+			return ParseResult{}, fmt.Errorf("parser: reading export: %w", err)
+		}
+	}
+
 	csvReader := csv.NewReader(r)
 	csvReader.Comma = mapping.Comma()
 	header, err := csvReader.Read()
@@ -48,6 +55,23 @@ func (parser *Parser) ParseCSV(ctx context.Context, bankName string, r io.Reader
 	}
 
 	return parseRows(ctx, mapping, layout, csvReader)
+}
+
+// decodeLatin1 converts ISO-8859-1 to UTF-8: each byte is the code point of
+// the same value.
+// ponytail: reads the whole export into memory (fine for monthly exports);
+// 0x80–0x9F decode as C1 controls, not Windows-1252's € and quotes — switch to
+// golang.org/x/text/encoding/charmap if a bank sends those.
+func decodeLatin1(r io.Reader) (io.Reader, error) {
+	raw, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+	runes := make([]rune, len(raw))
+	for i, b := range raw {
+		runes[i] = rune(b)
+	}
+	return strings.NewReader(string(runes)), nil
 }
 
 // layout resolves a mapping against one export's header row.

@@ -1,5 +1,6 @@
 allMappings:
   - bankName: sparkasse
+    encoding: iso-8859-1
     dateFormat: "02.01.06"
     delimiter: ";"
     decimalSeparator: ","
