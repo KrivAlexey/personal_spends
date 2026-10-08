@@ -76,7 +76,7 @@ Three thin `main.go` files, all wiring up the same `internal/` packages:
 POST /uploads/csv  (multipart, field: "file")
   │
   └─ ingest.Importer.Import(ctx, bankName, r)            the loop, testable without HTTP
-        ├─ BankMappingProvider.GetMapping(bankName)  column mapping, delimiter, date and
+        ├─ BankMappingProvider.GetMapping(bankName)  column mapping, encoding, delimiter, date and
         │                              decimal format, pending marker, identity columns
         ├─ Parser.ParseCSV(ctx, bankName, r)   drops pending rows, assigns each row its ID
         │                              over the whole file (0011)
