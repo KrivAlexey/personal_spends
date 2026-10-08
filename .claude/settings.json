@@ -53,7 +53,7 @@
       "Bash(gh pr merge*)",
       "Bash(gh api *merge*)",
       "Bash(git push * main)",
-      "Bash(git push * main:*)",
+      "Bash(git push * main*)",
       "Bash(git push * *:main)",
       "Bash(git push * HEAD:main)"
     ]
