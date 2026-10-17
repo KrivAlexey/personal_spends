@@ -13,7 +13,7 @@ Uploads come from the owner via `curl`. The MCP tools only query, so nothing upl
 `POST /uploads/csv?bank=<bankName>` with the export as the raw request body (`Content-Type: text/csv`). The handler passes the body to `Import` byte for byte. Decoding the bank's encoding stays in the parser.
 
 - Missing or empty `bank` → `400`
-- Empty body → `400`
+- Empty body, or a body that fails to read (connection dropped before or during the upload) → `400`
 - `parser.ErrBankMappingNotFound` → `400` (an unknown bank is an error, not a guess: [0008](0008-manual-bank-mappings.md))
 - Any other import error → `500`, with no internal error text in the response
 - Success → `200` with `{"imported", "already_known", "pending_skipped"}`
