@@ -17,7 +17,8 @@ This document describes the v1 target. What is built so far:
 | `internal/parser` | Built: `Parser.ParseCSV` (pending filter, transaction IDs) + `FileMappingProvider`, tested |
 | `internal/storage` | Built: `PutExpense`, `SaveExpenses` (batched, retried), `KnownIDs`, tested. Not yet: `QueryExpenses` |
 | `internal/ingest` | Built: `Importer.Import` (serial loop, skips known rows), tested with fakes |
-| `internal/handler`, `internal/mcp`, `cmd/*` | Not started |
+| `internal/handler` | Built: `POST /uploads/csv` ([0012](decisions/0012-raw-csv-upload-body.md)), tested with a fake importer. Not yet: other endpoints, `X-API-Key` middleware, logging of 500s (#88) |
+| `internal/mcp`, `cmd/*` | Not started |
 | Terraform | DynamoDB table with GSI1 only. Not yet: Lambda, API Gateway |
 | Configuration (below) | Not read anywhere yet; arrives with `cmd/` |
 
@@ -73,7 +74,7 @@ Three thin `main.go` files, all wiring up the same `internal/` packages:
 ### CSV upload
 
 ```
-POST /uploads/csv  (multipart, field: "file")
+POST /uploads/csv?bank=<bankName>  (raw CSV body, 0012)
   │
   └─ ingest.Importer.Import(ctx, bankName, r)            the loop, testable without HTTP
         ├─ BankMappingProvider.GetMapping(bankName)  column mapping, encoding, delimiter, date and
@@ -91,7 +92,7 @@ POST /uploads/csv  (multipart, field: "file")
 Re-uploading a file or an overlapping export imports only rows not stored before
 ([0011](decisions/0011-transaction-identity-and-deduplication.md); spec:
 [`openspec/specs/csv-import`](../openspec/specs/csv-import/spec.md)). Everything below
-`Import` is built; the HTTP handler calling it is not.
+`Import` is built, and so is the handler calling it; no entry point serves it yet (`cmd/*`).
 
 Bank mappings are written by hand and committed to the repo
 (`internal/parser/bank_mappings.yaml`) — one entry per bank, added as a new
@@ -195,7 +196,7 @@ All endpoints require `X-API-Key` header.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/uploads/csv` | Upload bank export CSV |
+| `POST` | `/uploads/csv` | Upload bank export CSV as the raw body (`bank` param, required); returns `imported`, `already_known`, `pending_skipped` ([0012](decisions/0012-raw-csv-upload-body.md)) |
 | `GET` | `/expenses` | Query expenses (`from`, `to`, `category`, `min_amount`, `max_amount`, `limit` params) |
 | `POST` | `/expenses` | Add a single expense manually (JSON body with the expense fields) |
 | `GET` | `/expenses/summary` | Spending totals grouped by category (`from`, `to` params) |

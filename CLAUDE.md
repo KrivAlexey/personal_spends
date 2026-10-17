@@ -18,7 +18,7 @@ Read the relevant doc before changing a subsystem; update it in the same PR when
 
 ```
 cmd/          lambda/, server/ (localhost:8080), mcp/ (stdio) — thin main.go files (not started)
-internal/     categorizer, parser, storage, categories; handler, mcp (not started)
+internal/     categorizer, parser, storage, categories, ingest, handler (upload only); mcp (not started)
 terraform/    flat main.tf
 docs/         architecture.md, decisions/
 openspec/     specs/, changes/

@@ -5,7 +5,7 @@
 
 Personal expense tracking with AI categorization. Upload a bank CSV export; Claude categorizes each transaction; results land in DynamoDB and are queryable through a REST API and a local MCP server for AI agents.
 
-**Status:** work in progress. The core packages (CSV parsing, categorization, categories, DynamoDB storage) are built and tested. The HTTP handlers, entry points, MCP server and the Lambda / API Gateway infrastructure are not built yet. See [Implementation Status](docs/architecture.md#implementation-status).
+**Status:** work in progress. The core packages (CSV parsing, categorization, categories, DynamoDB storage) and the CSV upload handler are built and tested. The other HTTP handlers, the entry points, MCP server and the Lambda / API Gateway infrastructure are not built yet. See [Implementation Status](docs/architecture.md#implementation-status).
 
 ## Documentation
 
