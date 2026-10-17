@@ -192,7 +192,7 @@ Enables: "show all grocery expenses in April", "sum transport costs for Q1".
 
 ## API Endpoints
 
-All endpoints require `X-API-Key` header.
+All endpoints require `X-API-Key` header. Built endpoints are specified in [`openspec/specs/rest-api`](../openspec/specs/rest-api/spec.md).
 
 | Method | Path | Description |
 |--------|------|-------------|

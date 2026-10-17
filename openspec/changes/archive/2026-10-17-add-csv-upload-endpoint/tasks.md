@@ -13,5 +13,5 @@
 ## 3. Ship
 
 - [x] 3.1 Update `docs/architecture.md` Implementation Status with an `internal/handler` row
-- [ ] 3.2 Open the PR for #77, `ci` green
-- [ ] 3.3 Archive this change once merged
+- [x] 3.2 Open the PR for #77, `ci` green
+- [x] 3.3 Archive this change once merged
