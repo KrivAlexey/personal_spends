@@ -51,7 +51,8 @@ func (h *Handler) uploadCSV(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	br := bufio.NewReader(r.Body)
+	body := &readErrRecorder{r: r.Body}
+	br := bufio.NewReader(body)
 	if _, err := br.Peek(1); err != nil {
 		if err == io.EOF {
 			http.Error(w, "empty bank CSV", http.StatusBadRequest)
@@ -62,6 +63,10 @@ func (h *Handler) uploadCSV(w http.ResponseWriter, r *http.Request) {
 	}
 
 	res, err := h.imp.Import(r.Context(), bank, br)
+	if err != nil && body.err != nil {
+		http.Error(w, "reading request body failed", http.StatusBadRequest)
+		return
+	}
 	if errors.Is(err, parser.ErrBankMappingNotFound) {
 		http.Error(w, fmt.Sprintf("bank mapping %q not found", bank), http.StatusBadRequest)
 		return
@@ -82,4 +87,19 @@ func toUploadResponse(result ingest.Result) uploadResponse {
 		AlreadyKnown:   result.AlreadyKnown,
 		PendingSkipped: result.PendingSkipped,
 	}
+}
+
+// readErrRecorder remembers the first read error other than io.EOF, so a body
+// cut off mid-upload is told apart from a server-side import failure.
+type readErrRecorder struct {
+	r   io.Reader
+	err error
+}
+
+func (b *readErrRecorder) Read(p []byte) (int, error) {
+	n, err := b.r.Read(p)
+	if err != nil && err != io.EOF && b.err == nil {
+		b.err = err
+	}
+	return n, err
 }
