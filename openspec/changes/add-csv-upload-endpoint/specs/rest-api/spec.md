@@ -23,7 +23,7 @@ The system SHALL hand the request body to the import byte for byte, without re-e
 - **THEN** the import receives exactly those bytes, and the stored description is `Grundpreis für Kontoführung`
 
 ### Requirement: Invalid uploads are rejected
-The system SHALL respond `400` and import nothing when the `bank` parameter is missing or empty, when the body is empty, or when no bank mapping exists for `bank`.
+The system SHALL respond `400` and import nothing when the `bank` parameter is missing or empty, when the body is empty or cannot be read, or when no bank mapping exists for `bank`.
 
 #### Scenario: Missing bank parameter
 - **WHEN** an export is posted to `/uploads/csv` with no `bank` parameter
@@ -35,6 +35,10 @@ The system SHALL respond `400` and import nothing when the `bank` parameter is m
 
 #### Scenario: Empty body
 - **WHEN** an empty body is posted to `/uploads/csv?bank=sparkasse`
+- **THEN** the response is `400` and nothing is imported
+
+#### Scenario: Unreadable body
+- **WHEN** the client's connection drops before the body arrives
 - **THEN** the response is `400` and nothing is imported
 
 #### Scenario: Unknown bank
