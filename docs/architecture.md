@@ -73,7 +73,7 @@ Three thin `main.go` files, all wiring up the same `internal/` packages:
 ### CSV upload
 
 ```
-POST /uploads/csv  (multipart, field: "file")
+POST /uploads/csv?bank=<bankName>  (raw CSV body, 0012)
   │
   └─ ingest.Importer.Import(ctx, bankName, r)            the loop, testable without HTTP
         ├─ BankMappingProvider.GetMapping(bankName)  column mapping, encoding, delimiter, date and
@@ -195,7 +195,7 @@ All endpoints require `X-API-Key` header.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/uploads/csv` | Upload bank export CSV |
+| `POST` | `/uploads/csv` | Upload bank export CSV as the raw body (`bank` param, required); returns `imported`, `already_known`, `pending_skipped` ([0012](decisions/0012-raw-csv-upload-body.md)) |
 | `GET` | `/expenses` | Query expenses (`from`, `to`, `category`, `min_amount`, `max_amount`, `limit` params) |
 | `POST` | `/expenses` | Add a single expense manually (JSON body with the expense fields) |
 | `GET` | `/expenses/summary` | Spending totals grouped by category (`from`, `to` params) |
