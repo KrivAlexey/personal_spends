@@ -103,10 +103,14 @@ func TestUploadCSV(t *testing.T) {
 			wantCalled: true,
 		},
 		{
-			name:       "import failure hides internal error",
-			target:     "/uploads/csv?bank=sparkasse",
-			body:       csvBody,
-			imp:        &fakeImporter{err: errors.New("ingest: save: dynamodb: secret-table-name throttled")},
+			name:   "import failure hides internal error",
+			target: "/uploads/csv?bank=sparkasse",
+			body:   csvBody,
+			// Import returns the partial result of the batches saved before the failure.
+			imp: &fakeImporter{
+				res: ingest.Result{Imported: 50},
+				err: errors.New("ingest: save: dynamodb: secret-table-name throttled"),
+			},
 			wantStatus: http.StatusInternalServerError,
 			wantCalled: true,
 			bodyLacks:  "secret-table-name",
@@ -126,6 +130,9 @@ func TestUploadCSV(t *testing.T) {
 			}
 			if tt.bodyLacks != "" && strings.Contains(rec.Body.String(), tt.bodyLacks) {
 				t.Errorf("body leaks %q: %q", tt.bodyLacks, rec.Body.String())
+			}
+			if tt.wantStatus != http.StatusOK && strings.Contains(rec.Body.String(), `"imported"`) {
+				t.Errorf("error response carries an import result: %q", rec.Body.String())
 			}
 			if tt.wantJSON == nil {
 				return
