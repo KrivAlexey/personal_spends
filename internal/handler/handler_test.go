@@ -177,18 +177,37 @@ type errReader struct{}
 
 func (errReader) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
 
-// A body that fails to read (client dropped mid-upload) is rejected before
-// the import, not passed on as if it were valid.
+// A body that fails to read (client dropped mid-upload) is a client error,
+// whether it fails on the first byte or partway through.
 func TestUploadCSV_UnreadableBody(t *testing.T) {
-	imp := &fakeImporter{}
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/uploads/csv?bank=sparkasse", errReader{})
-	New(imp).Routes().ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d (body: %q)", rec.Code, http.StatusBadRequest, rec.Body.String())
+	tests := []struct {
+		name       string
+		body       io.Reader
+		wantCalled bool
+	}{
+		{
+			name: "fails before the first byte",
+			body: errReader{},
+		},
+		{
+			name:       "fails mid-body",
+			body:       io.MultiReader(strings.NewReader("Buchungstag;Be"), errReader{}),
+			wantCalled: true,
+		},
 	}
-	if imp.called {
-		t.Error("importer called for an unreadable body")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			imp := &fakeImporter{}
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/uploads/csv?bank=sparkasse", tt.body)
+			New(imp).Routes().ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Errorf("status = %d, want %d (body: %q)", rec.Code, http.StatusBadRequest, rec.Body.String())
+			}
+			if imp.called != tt.wantCalled {
+				t.Errorf("importer called = %v, want %v", imp.called, tt.wantCalled)
+			}
+		})
 	}
 }

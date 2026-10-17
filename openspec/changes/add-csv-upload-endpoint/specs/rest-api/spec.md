@@ -41,6 +41,10 @@ The system SHALL respond `400` and import nothing when the `bank` parameter is m
 - **WHEN** the client's connection drops before the body arrives
 - **THEN** the response is `400` and nothing is imported
 
+#### Scenario: Body cut off mid-upload
+- **WHEN** the client's connection drops after part of the export has arrived
+- **THEN** the response is `400` and nothing is stored
+
 #### Scenario: Unknown bank
 - **WHEN** an export is posted to `/uploads/csv?bank=nobank` and no mapping named `nobank` exists
 - **THEN** the response is `400` and nothing is stored
