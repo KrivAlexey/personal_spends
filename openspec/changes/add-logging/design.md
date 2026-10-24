@@ -9,7 +9,7 @@ Nothing logs today. Errors are wrapped with `%w` at each layer (`ingest: categor
 - Each layer logs what only it knows, and correlation fields come from the context, not from extra parameters.
 
 **Non-Goals:**
-- Changing the `Categorizer` interface to return usage.
+- Changing the `Categorizer` method signature to return usage. Its contract does change: every implementation logs its batches (`categorizer` spec delta, owner-approved 2026-10-24).
 - Log sampling, metrics, tracing, Lambda log-group retention (Terraform, later).
 
 ## Decisions
@@ -23,7 +23,7 @@ Constructors take a `*slog.Logger`: `handler.New`, `ingest.NewImporter`, `catego
 - The middleware stores `request_id`.
 - The importer stores `batch` and `batches` around each categorize-and-save step.
 
-This lets `categorizer.Claude` write the batch record the spec asks for, with its own `size`, `duration_ms`, `input_tokens`, `output_tokens` and `stop_reason` plus `batch`/`batches`/`request_id` from the context, without the interface changing or the importer seeing token counts.
+This lets each `Categorizer` write the batch record the `categorizer` spec asks for (`categorizer.Claude` first), with its own `size`, `duration_ms`, `input_tokens`, `output_tokens` and `stop_reason` plus `batch`/`batches`/`request_id` from the context, without the interface changing or the importer seeing token counts.
 *Alternative:* two records per batch, one from the importer (position, duration) and one from Claude (tokens). Rejected because the spec wants one record per batch to read in a log viewer.
 
 ### Claude logs before unpacking
@@ -37,6 +37,8 @@ Lower layers return wrapped errors and never log them. `uploadCSV` writes the si
 1. generates `request_id` (16 hex characters from `crypto/rand`) and stores it in the context;
 2. wraps `ResponseWriter` to capture the status;
 3. writes the INFO access record when the handler returns.
+
+`bank` comes from the caller, so every record cuts it to 64 characters plus `…`, and the 400 `reason` is fixed text without it. The default 1 MB header limit would otherwise allow a 1 MB value per record.
 
 The incoming `X-Request-Id` is ignored for now. On Lambda the API Gateway request ID can replace the generated one when `cmd/lambda` lands, with no change to the spec.
 
@@ -53,8 +55,9 @@ The log call sites only ever log counts, so the risk is the `error` field. The f
 
 - [A future error message embeds content again] → the spec's "Debug upload of a real-looking export" scenario is a handler-level test that runs a full fake import at DEBUG and greps the buffer for the fixture's merchant, description and amount. A regression fails it.
 - [Anthropic SDK error text could echo request content] → assumed not. Check the SDK's `Error.Error()` during implementation and list it under **Not verified** if unconfirmed.
-- [Every future `Categorizer` must write the batch record itself] → the spec makes it a contract. `BedrockCategorizer` gets the same test.
+- [Every `Categorizer` must write the batch record itself] → the `categorizer` spec makes it a contract, with `0`/`none` for implementations that call no model. The importer tests' fake `Categorizer` meets it too, so the two-batch scenario is tested at the importer level. `BedrockCategorizer` gets the same test as `Claude`.
 - [Context attributes are invisible at call sites] → limited to `request_id`, `batch`, `batches`; documented in the package.
+- [Bank-data tests miss a reformatted value] → the scenarios match case-insensitively and check each amount in raw (`23,45`) and parsed (`23.45`) form.
 - [Text format on Lambda is hard to query] → Terraform sets `LOG_FORMAT=json` when the Lambda lands.
 
 ## Migration Plan

@@ -5,7 +5,7 @@ Defines what the operator can rely on finding in the service's logs: which recor
 ## ADDED Requirements
 
 ### Requirement: Log level and format are configurable
-The system SHALL write log records at or above the level named by `LOG_LEVEL` (`debug`, `info`, `warn`, `error`, case-insensitive; default `info`) and in the format named by `LOG_FORMAT` (`text` or `json`; default `text`). An unrecognized value for either variable SHALL stop startup with an error naming the variable and the value.
+The system SHALL write log records at or above the level named by `LOG_LEVEL` (`debug`, `info`, `warn`, `error`, case-insensitive; default `info`) and in the format named by `LOG_FORMAT` (`text` or `json`; default `text`). An unrecognized value for either variable SHALL make `logging.New` return an error naming the variable and the value. Stopping startup on that error belongs to the `cmd/*` change that wires the logger.
 
 #### Scenario: Default configuration
 - **WHEN** the service starts with neither variable set
@@ -16,8 +16,8 @@ The system SHALL write log records at or above the level named by `LOG_LEVEL` (`
 - **THEN** every record, DEBUG included, is written as one JSON object per line
 
 #### Scenario: Invalid level
-- **WHEN** the service starts with `LOG_LEVEL=verbose`
-- **THEN** startup fails with an error that names `LOG_LEVEL` and `verbose`
+- **WHEN** `logging.New` is called with the level `verbose`
+- **THEN** it returns an error that names `LOG_LEVEL` and `verbose`, and no logger
 
 ### Requirement: Every record has a timestamp, level and message
 Every log record SHALL carry a timestamp, a level and a message. In JSON format these SHALL be the keys `time`, `level` and `msg`, and other fields SHALL be top-level keys with the names given in these requirements.
@@ -49,7 +49,7 @@ The system SHALL write one INFO record when it finishes serving each HTTP reques
 - **THEN** the INFO access record is still written, with `status=500`
 
 ### Requirement: Internal errors are logged with their cause
-When a request fails with `500`, the system SHALL write exactly one ERROR record carrying `method`, `path`, `bank` (when present) and `error`, the full error chain as text. The HTTP response SHALL stay as `rest-api` specifies, with no internal details. A layer that returns an error SHALL NOT also log it, so one failure produces one ERROR record.
+When a request fails with `500`, the system SHALL write exactly one ERROR record carrying `method`, `path`, `bank` (when present, capped as below) and `error`, the full error chain as text. The HTTP response SHALL stay as `rest-api` specifies, with no internal details. A layer that returns an error SHALL NOT also log it, so one failure produces one ERROR record.
 
 #### Scenario: Storage failure during upload
 - **WHEN** an upload to `/uploads/csv?bank=sparkasse` fails because saving to the store fails
@@ -60,11 +60,15 @@ When a request fails with `500`, the system SHALL write exactly one ERROR record
 - **THEN** exactly one ERROR record is written, and its `error` contains the categorizer's error text
 
 ### Requirement: Rejected requests are logged with the reason
-When a request is rejected with `400`, the system SHALL write one WARN record with `method`, `path`, `bank` (when present) and `reason`, the same text as the response body.
+When a request is rejected with `400`, the system SHALL write one WARN record with `method`, `path`, `bank` (when present) and `reason`. The `reason` SHALL be fixed text that contains no caller input. In every record, a `bank` value longer than 64 characters SHALL be cut to its first 64 characters followed by `…`.
 
 #### Scenario: Unknown bank
 - **WHEN** an export is posted to `/uploads/csv?bank=nobank`
-- **THEN** one WARN record is written with `bank=nobank` and a `reason` saying the bank mapping was not found
+- **THEN** one WARN record is written with `bank=nobank` and a `reason` saying the bank mapping was not found, and the `reason` does not contain `nobank`
+
+#### Scenario: Oversized bank parameter
+- **WHEN** an export is posted with a `bank` parameter of 10,000 characters
+- **THEN** the WARN record's `bank` is the first 64 characters followed by `…`, and no record contains the full value
 
 #### Scenario: Missing bank parameter
 - **WHEN** an export is posted to `/uploads/csv` with no `bank` parameter
@@ -74,7 +78,7 @@ When a request is rejected with `400`, the system SHALL write one WARN record wi
 At DEBUG level, an upload SHALL write records for each processing step with these fields:
 - after parsing: `bank`, `rows` (transactions parsed), `pending_skipped`
 - after deduplication: `already_known`, `fresh`
-- per categorizer batch: `batch` (1-based), `batches` (total), `size`, `duration_ms`, `input_tokens`, `output_tokens`, `stop_reason`
+- per categorizer batch: `batch` (1-based) and `batches` (total), plus the fields in the `categorizer` spec
 - per saved batch: `batch`, `saved`
 - at the end: `imported`, `already_known`, `pending_skipped`, `duration_ms`
 
@@ -82,7 +86,7 @@ None of these records SHALL be written at INFO level or above.
 
 #### Scenario: Two-batch import
 - **WHEN** an export with 60 new rows is uploaded with a batch size of 50 and `LOG_LEVEL=debug`
-- **THEN** two categorizer batch records are written, with `batch=1, batches=2, size=50` and `batch=2, batches=2, size=10`, followed by a summary with `imported=60`
+- **THEN** two categorizer batch records are written, with `batch=1, batches=2, size=50` and `batch=2, batches=2, size=10`, followed by a summary with `imported=60`. At the importer level this holds with any `Categorizer` that meets its contract, including the test fake
 
 #### Scenario: Truncated Claude response is visible
 - **WHEN** a categorizer batch's response stops because it reached the token limit
@@ -108,12 +112,12 @@ No log record, at any level and including the `error` field, SHALL contain the r
 
 #### Scenario: Debug upload of a real-looking export
 - **WHEN** an export containing the merchant `REWE Markt GmbH`, the description `Kartenzahlung 12.03` and the amount `-23,45` is uploaded with `LOG_LEVEL=debug`
-- **THEN** none of `REWE`, `Kartenzahlung` or `23,45` appears anywhere in the log output
+- **THEN** none of these appears anywhere in the log output, matched case-insensitively: `REWE`, `Kartenzahlung`, the raw amount `23,45` and its parsed form `23.45`
 
 #### Scenario: Malformed cell value
 - **WHEN** an upload fails because the amount cell `-12,3x` can't be parsed
-- **THEN** the logged error names the column, but `-12,3x` does not appear in the log output
+- **THEN** the record that logs the failure names the column, and neither `12,3x` nor `12.3x` appears in the log output. The record is ERROR while `rest-api` answers parse failures with `500`; once #91 makes them `400`, the same holds for the WARN record
 
 #### Scenario: Store write failure
 - **WHEN** writing an expense to the store fails
-- **THEN** the logged error does not contain that expense's merchant, description or amount
+- **THEN** the logged error contains none of that expense's merchant or description (case-insensitive) or its amount in raw or parsed form
