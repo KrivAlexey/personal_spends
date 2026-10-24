@@ -38,18 +38,22 @@ The system SHALL assign each HTTP request an ID. Every record written while serv
 - **THEN** their records carry different `request_id` values
 
 ### Requirement: Every request writes an access record
-The system SHALL write one INFO record when it finishes serving each HTTP request, with `method`, `path`, `status` and `duration_ms`. The record SHALL NOT include the query string or the request body.
+The system SHALL write one INFO record when it finishes serving each HTTP request, with `method`, `route`, `status` and `duration_ms`. `route` SHALL be the matched route pattern, or `unmatched` when no route matched; the record SHALL NOT include the request path, the query string or the request body.
 
 #### Scenario: Successful upload
 - **WHEN** `POST /uploads/csv?bank=sparkasse` returns `200`
-- **THEN** one INFO record is written with `method=POST`, `path=/uploads/csv`, `status=200` and a non-negative `duration_ms`
+- **THEN** one INFO record is written with `method=POST`, `route=POST /uploads/csv`, `status=200` and a non-negative `duration_ms`
 
 #### Scenario: Failed upload
 - **WHEN** an upload returns `500`
 - **THEN** the INFO access record is still written, with `status=500`
 
+#### Scenario: Unknown path
+- **WHEN** `GET /REWE-23,45` followed by 100 KB of `A` returns `404`
+- **THEN** the access record has `route=unmatched` and `status=404`, and neither `REWE` nor any part of the path appears in the log output
+
 ### Requirement: Internal errors are logged with their cause
-When a request fails with `500`, the system SHALL write exactly one ERROR record carrying `method`, `path`, `bank` (when present, capped as below) and `error`, the full error chain as text. The HTTP response SHALL stay as `rest-api` specifies, with no internal details. A layer that returns an error SHALL NOT also log it, so one failure produces one ERROR record.
+When a request fails with `500`, the system SHALL write exactly one ERROR record carrying `method`, `route`, `bank` (when present, capped as below) and `error`, the full error chain as text. The HTTP response SHALL stay as `rest-api` specifies, with no internal details. A layer that returns an error SHALL NOT also log it, so one failure produces one ERROR record.
 
 #### Scenario: Storage failure during upload
 - **WHEN** an upload to `/uploads/csv?bank=sparkasse` fails because saving to the store fails
@@ -60,7 +64,7 @@ When a request fails with `500`, the system SHALL write exactly one ERROR record
 - **THEN** exactly one ERROR record is written, and its `error` contains the categorizer's error text
 
 ### Requirement: Rejected requests are logged with the reason
-When a request is rejected with `400`, the system SHALL write one WARN record with `method`, `path`, `bank` (when present) and `reason`. The `reason` SHALL be fixed text that contains no caller input. In every record, a `bank` value longer than 64 characters SHALL be cut to its first 64 characters followed by `…`.
+When a request is rejected with `400`, the system SHALL write one WARN record with `method`, `route`, `bank` (when present) and `reason`. The `reason` SHALL be fixed text that contains no caller input. In every record, a `bank` value longer than 64 characters SHALL be cut to its first 64 characters followed by `…`.
 
 #### Scenario: Unknown bank
 - **WHEN** an export is posted to `/uploads/csv?bank=nobank`

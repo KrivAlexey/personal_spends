@@ -36,7 +36,9 @@ Lower layers return wrapped errors and never log them. `uploadCSV` writes the si
 `Handler.Routes()` wraps the mux in a middleware that:
 1. generates `request_id` (16 hex characters from `crypto/rand`) and stores it in the context;
 2. wraps `ResponseWriter` to capture the status;
-3. writes the INFO access record when the handler returns.
+3. writes the INFO access record when the handler returns, with `route` read from `r.Pattern`. `ServeMux` sets it on the request it is handed, so the wrapper sees it after `next.ServeHTTP`; it is empty for a 404, logged as `unmatched`.
+
+The raw path is never logged: it is caller input of any length and could carry bank data (`/REWE-23,45`). The route pattern is fixed text from our code.
 
 `bank` comes from the caller, so every record cuts it to 64 characters plus `…`, and the 400 `reason` is fixed text without it. The default 1 MB header limit would otherwise allow a 1 MB value per record.
 
@@ -57,6 +59,7 @@ The log call sites only ever log counts, so the risk is the `error` field. The f
 - [Anthropic SDK error text could echo request content] → assumed not. Check the SDK's `Error.Error()` during implementation and list it under **Not verified** if unconfirmed.
 - [Every `Categorizer` must write the batch record itself] → the `categorizer` spec makes it a contract, with `0`/`none` for implementations that call no model. The importer tests' fake `Categorizer` meets it too, so the two-batch scenario is tested at the importer level. `BedrockCategorizer` gets the same test as `Claude`.
 - [Context attributes are invisible at call sites] → limited to `request_id`, `batch`, `batches`; documented in the package.
+- [Transaction IDs are hashes of row content] → an ID is the first 64 bits of a SHA-256 over all identity columns (16 for Sparkasse, including IBAN and references), so guessing a row back from its ID is impractical. A bank whose identity columns are few and guessable (date and amount only) would weaken this; revisit then.
 - [Bank-data tests miss a reformatted value] → the scenarios match case-insensitively and check each amount in raw (`23,45`) and parsed (`23.45`) form.
 - [Text format on Lambda is hard to query] → Terraform sets `LOG_FORMAT=json` when the Lambda lands.
 
