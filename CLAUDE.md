@@ -46,6 +46,11 @@ cd terraform && terraform init && terraform plan   # apply only when asked
 - Narrow interfaces a consumer needs only for itself (like `storage.dynamoDBAPI`) are unexported and defined in the consuming package
 - Constructors accept interfaces and return concrete types
 
+## Go skills and agents
+
+- Go skills (samber) live in `.agents/skills/golang-*`. `.claude/rules/go.md` loads on the first `.go` file touched and lists which to read; `openspec/config.yaml` repeats this for `/opsx:apply`.
+- Agents in `.claude/agents/` preload their skills: `go-test-writer` (red-phase tests), `go-reviewer` (read-only review before a PR), `go-doc-writer` (godoc, ADRs, docs).
+
 ## Working mode
 
 Default: you implement everything: code, tests, Terraform, docs.
