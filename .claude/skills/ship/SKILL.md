@@ -82,6 +82,16 @@ If `ci` failed: fix, push, then repeat this step (watch and update the CI sectio
 
 If the PR is stacked on another PR's branch, say so in its first line and note that it retargets to `main` once that PR merges.
 
-## 6. Report
+## 6. Review threads
+
+After pushing fixes for review comments, answer every review thread on the PR:
+
+```bash
+gh api graphql -f query='query{repository(owner:"<owner>",name:"<repo>"){pullRequest(number:<PR>){reviewThreads(first:100){nodes{id isResolved comments(first:1){nodes{databaseId body}}}}}}}'
+gh api -X POST repos/<owner>/<repo>/pulls/<PR>/comments/<databaseId>/replies -f body="<reply>"
+gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id=<thread id>
+```
+
+## 7. Report
 
 Give the issue and PR URLs and the `ci` result. Report done only when it's green. Also list anything that was left out and why. **Never merge.** Merging is the owner's step.
