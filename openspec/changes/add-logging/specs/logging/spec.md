@@ -64,7 +64,7 @@ When a request fails with `500`, the system SHALL write exactly one ERROR record
 - **THEN** exactly one ERROR record is written, and its `error` contains the categorizer's error text
 
 ### Requirement: Rejected requests are logged with the reason
-When a request is rejected with `400`, the system SHALL write one WARN record with `method`, `route`, `bank` (when present) and `reason`. The `reason` SHALL be fixed text that contains no caller input. In every record, a `bank` value longer than 64 characters SHALL be cut to its first 64 characters followed by `…`.
+When a request is rejected with `400`, the system SHALL write one WARN record with `method`, `route`, `bank` (when present) and `reason`. The `reason` SHALL be fixed text that contains no caller input. In every record, a `bank` value longer than 64 runes (Unicode characters, not bytes) SHALL be cut to its first 64 runes followed by `…`.
 
 #### Scenario: Unknown bank
 - **WHEN** an export is posted to `/uploads/csv?bank=nobank`
@@ -72,7 +72,11 @@ When a request is rejected with `400`, the system SHALL write one WARN record wi
 
 #### Scenario: Oversized bank parameter
 - **WHEN** an export is posted with a `bank` parameter of 10,000 characters
-- **THEN** the WARN record's `bank` is the first 64 characters followed by `…`, and no record contains the full value
+- **THEN** the WARN record's `bank` is the first 64 runes followed by `…`, and no record contains the full value
+
+#### Scenario: Oversized multi-byte bank parameter
+- **WHEN** an export is posted with a `bank` parameter of `ä` repeated 100 times
+- **THEN** the WARN record's `bank` is `ä` repeated 64 times followed by `…`, and contains no U+FFFD replacement character
 
 #### Scenario: Missing bank parameter
 - **WHEN** an export is posted to `/uploads/csv` with no `bank` parameter
@@ -105,11 +109,11 @@ None of these records SHALL be written at INFO level or above.
 - **THEN** the only record written for it is the access record
 
 ### Requirement: Store retries are logged
-When a store operation retries because items were left unprocessed, the system SHALL write a WARN record with `operation` (`batch_write` or `batch_get`), `attempt` and `unprocessed` (count).
+When a store operation retries because items were left unprocessed, the system SHALL write a WARN record with `operation` (`batch_write` or `batch_get`), `attempt` and `unprocessed` (count). `attempt` counts retries: the first retry after the original call is `attempt=1`.
 
 #### Scenario: Throttled batch write
 - **WHEN** a batch write leaves 3 items unprocessed and is retried
-- **THEN** a WARN record is written with `operation=batch_write`, `attempt=1` and `unprocessed=3`
+- **THEN** before the first retry a WARN record is written with `operation=batch_write`, `attempt=1` and `unprocessed=3`
 
 ### Requirement: Bank data never reaches the logs
 No log record, at any level and including the `error` field, SHALL contain the request body, a raw CSV row or cell value, a transaction's merchant, description or amount, the text of a Claude request or response, or a secret (`ANTHROPIC_API_KEY`, `API_KEY`, the `X-API-Key` header). Records MAY contain counts, durations, token usage, bank names, transaction IDs, category names and status codes.
@@ -121,6 +125,10 @@ No log record, at any level and including the `error` field, SHALL contain the r
 #### Scenario: Malformed cell value
 - **WHEN** an upload fails because the amount cell `-12,3x` can't be parsed
 - **THEN** the record that logs the failure names the column, and neither `12,3x` nor `12.3x` appears in the log output. The record is ERROR while `rest-api` answers parse failures with `500`; once #91 makes them `400`, the same holds for the WARN record
+
+#### Scenario: Secrets in an error path
+- **WHEN** an upload with the header `X-API-Key: sentinel-api-key` fails because the categorizer, constructed with the API key `sentinel-anthropic-key`, returns an error, with `LOG_LEVEL=debug`
+- **THEN** neither `sentinel-api-key` nor `sentinel-anthropic-key` appears anywhere in the log output
 
 #### Scenario: Store write failure
 - **WHEN** writing an expense to the store fails

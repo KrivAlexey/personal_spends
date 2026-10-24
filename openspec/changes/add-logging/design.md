@@ -19,7 +19,7 @@ Constructors take a `*slog.Logger`: `handler.New`, `ingest.NewImporter`, `catego
 *Alternatives:* `slog.Default()` (global state, against CLAUDE.md); a logger in the context (hides a dependency, and it's the classic `context.Value` misuse); zap/zerolog (new dependency, and nothing slog lacks here).
 
 ### Context attributes through one `slog.Handler` wrapper
-`internal/logging` provides `WithAttrs(ctx, attrs...) context.Context` and a handler wrapper whose `Handle` appends the attributes stored in the context to the record. Callers always use the `…Context` methods (`DebugContext`, `ErrorContext`).
+`internal/logging` provides `WithAttrs(ctx, attrs...) context.Context` and a handler wrapper whose `Handle` appends the attributes stored in the context to the record. The wrapper also overrides `WithAttrs` and `WithGroup` to return a wrapper around the derived inner handler, so `logger.With(...)` and groups keep the context attributes. `logging.WithAttrs` replaces an attribute whose key is already in the context instead of appending it, so the second batch's context holds `batch=2` once, not `batch=1` and `batch=2`. Callers always use the `…Context` methods (`DebugContext`, `ErrorContext`).
 - The middleware stores `request_id`.
 - The importer stores `batch` and `batches` around each categorize-and-save step.
 
@@ -36,11 +36,11 @@ Lower layers return wrapped errors and never log them. `uploadCSV` writes the si
 `Handler.Routes()` wraps the mux in a middleware that:
 1. generates `request_id` (16 hex characters from `crypto/rand`) and stores it in the context;
 2. wraps `ResponseWriter` to capture the status;
-3. writes the INFO access record when the handler returns, with `route` read from `r.Pattern`. `ServeMux` sets it on the request it is handed, so the wrapper sees it after `next.ServeHTTP`; it is empty for a 404, logged as `unmatched`.
+3. writes the INFO access record when the handler returns, with `route` read from `r.Pattern`. `ServeMux` sets `Pattern` on the request it is handed, which is the copy made by `r.WithContext` for `request_id`. The middleware keeps that copy in a variable and reads `Pattern` from it after `next.ServeHTTP`; reading the original request would give `""` and log every route as `unmatched`. It is empty for a 404, logged as `unmatched`.
 
 The raw path is never logged: it is caller input of any length and could carry bank data (`/REWE-23,45`). The route pattern is fixed text from our code.
 
-`bank` comes from the caller, so every record cuts it to 64 characters plus `…`, and the 400 `reason` is fixed text without it. The default 1 MB header limit would otherwise allow a 1 MB value per record.
+`bank` comes from the caller, so every record cuts it to 64 runes plus `…` (counted in runes, not bytes, so a multi-byte character such as `ä` is never split), and the 400 `reason` is fixed text without it. The default 1 MB header limit would otherwise allow a 1 MB value per record.
 
 The incoming `X-Request-Id` is ignored for now. On Lambda the API Gateway request ID can replace the generated one when `cmd/lambda` lands, with no change to the spec.
 
