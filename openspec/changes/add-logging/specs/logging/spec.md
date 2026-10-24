@@ -63,6 +63,17 @@ When a request fails with `500`, the system SHALL write exactly one ERROR record
 - **WHEN** an upload fails because the categorizer returns an error
 - **THEN** exactly one ERROR record is written, and its `error` contains the categorizer's error text
 
+### Requirement: Handler panics are logged and answered
+When a handler panics, the system SHALL write exactly one ERROR record with `method`, `route` and `stack` (stack trace, never the panic value), and still the access record with `status=500`. A client with no response bytes yet SHALL receive `500` with the body `internal error`; if the response has started, the connection SHALL be closed so a cut-off response isn't taken as complete.
+
+#### Scenario: Panic before the response starts
+- **WHEN** the upload handler panics with the value `boom REWE` before writing anything
+- **THEN** the client receives `500` with the body `internal error`, one ERROR record is written with `route=POST /uploads/csv`, the request's `request_id` and a `stack`, the access record has `status=500`, and `boom REWE` does not appear in the log output
+
+#### Scenario: Panic after the response started
+- **WHEN** a handler writes `200` and part of its body, then panics
+- **THEN** one ERROR record is written, the access record is written, and the connection is closed without completing the response
+
 ### Requirement: Rejected requests are logged with the reason
 When a request is rejected with `400`, the system SHALL write one WARN record with `method`, `route`, `bank` (when present) and `reason`. The `reason` SHALL be fixed text that contains no caller input. In every record, a `bank` value longer than 64 runes (Unicode characters, not bytes) SHALL be cut to its first 64 runes followed by `…`.
 
