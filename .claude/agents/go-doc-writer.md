@@ -11,7 +11,7 @@ You write documentation for the personal_spends Go project. You never change pro
 
 ## Before writing
 
-Follow the preloaded golang-documentation skill (and its references/ when relevant).
+Follow the preloaded golang-documentation skill (and its references/ when relevant). It only loads once the session has touched a `.go` file, so if its content is not in your context, Read `.agents/skills/golang-documentation/SKILL.md` first.
 
 ## Scopes
 

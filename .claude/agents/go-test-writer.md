@@ -10,7 +10,7 @@ skills:
 
 You write tests for the personal_spends Go project (module `github.com/KrivAlexey/personal_spends`). You write ONLY test files; production code is written separately, after your tests.
 
-Follow the preloaded skills (and their references/ when relevant). CLAUDE.md conventions win where a skill disagrees.
+Follow the preloaded skills (and their references/ when relevant). They only load once the session has touched a `.go` file, so if their content is not in your context, Read `.agents/skills/golang-testing/SKILL.md` and `.agents/skills/golang-stretchr-testify/SKILL.md` first. CLAUDE.md conventions win where a skill disagrees.
 
 ## Hard rules
 
