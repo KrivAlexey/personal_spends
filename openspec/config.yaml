@@ -14,7 +14,7 @@ rules:
   design:
     - For Go type, interface, context and concurrency choices, follow the golang-structs-interfaces, golang-context and golang-concurrency skills in .agents/skills/
   tasks:
-    - Order each task group test-first, per CLAUDE.md, with the failing tests committed on their own before the implementation commit
+    - Order each Go code task group test-first, per CLAUDE.md, with the failing tests committed on their own before the implementation commit (docs/config, Terraform and thin cmd wiring follow the CLAUDE.md exceptions instead)
     - End with a single review task, after all code and docs tasks and before opening the PR, that runs the go-reviewer agent on the full diff
 
 operations:
@@ -22,4 +22,4 @@ operations:
     guidance:
       - Before the first coding task, read the Go skills listed in .claude/rules/go.md
       - Write each task group's failing tests first (the go-test-writer agent can do it), confirm they fail on an assertion and commit them on their own, then implement and commit separately
-      - In the final review task, give go-reviewer the output of git diff main...HEAD, git log --oneline main..HEAD and the go build/vet/test result, then fix its bug and risk findings; stop and ask if a fix needs a core interface change (Categorizer, CategoryProvider, BankMappingProvider), a new dependency or a skipped test
+      - In the final review task, give go-reviewer the output of git diff <base>...HEAD, git log --oneline <base>..HEAD (base is the PR's target branch, main unless stacked on an unmerged PR) and the go build/vet/test result, then fix its bug and risk findings; stop and ask if a fix needs a core interface change (Categorizer, CategoryProvider, BankMappingProvider), a new dependency or a skipped test
