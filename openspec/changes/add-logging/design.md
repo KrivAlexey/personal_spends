@@ -50,14 +50,14 @@ The incoming `X-Request-Id` is ignored for now. On Lambda the API Gateway reques
 ### Bank-data safety lives in the error messages
 The log call sites only ever log counts, so the risk is the `error` field. The fix is at the source:
 - `storage`: `can't marshal map Expense:%v` / `can't write Expense:%v` → identify the expense by `ID` and `Date` only.
-- `parser`: `parsing column %q: %w` wraps strconv/time errors that quote the raw value → replace with a message naming the column and row number, without wrapping the value-bearing error (keep `%w` only for sentinel or I/O errors).
+- `parser`: `parsing column %q: %w` wraps strconv/time errors that quote the raw value → return a typed `*parser.ParseError{Column string; Row int}` whose `Error()` names the column and row but never the value, and which does not wrap the `strconv`/`time` error. Callers tell parse failures from I/O errors with `errors.As(err, &*parser.ParseError)`, which is what #91 needs to answer them with 400. I/O and sentinel errors keep `%w`. The `csv-import` spec doesn't describe parse-error content, so it needs no delta.
 - `categorizer`: the existing messages hold indices and counts only. The SDK's `create message` error holds the HTTP status and API error body, not our prompt (to be confirmed, see Risks).
 
 ## Risks / Trade-offs
 
 - [A future error message embeds content again] → the spec's "Debug upload of a real-looking export" scenario is a handler-level test that runs a full fake import at DEBUG and greps the buffer for the fixture's merchant, description and amount. A regression fails it.
-- [Anthropic SDK error text could echo request content] → assumed not. Check the SDK's `Error.Error()` during implementation and list it under **Not verified** if unconfirmed.
-- [Every `Categorizer` must write the batch record itself] → the `categorizer` spec makes it a contract, with `0`/`none` for implementations that call no model. The importer tests' fake `Categorizer` meets it too, so the two-batch scenario is tested at the importer level. `BedrockCategorizer` gets the same test as `Claude`.
+- [Anthropic SDK error text could echo request content] → assumed not, and checked as a merge gate: the implementation PR doesn't merge until task 3.8 confirms it from the SDK source, or the categorizer strips the echoed part.
+- [Every `Categorizer` must write the batch record itself] → the `categorizer` spec makes it a contract, with `0`/`none` for implementations that call no model. The importer tests' fake `Categorizer` meets it too, so the two-batch scenario is tested at the importer level. Every implementation's tests MUST call the shared contract helper from task 2.4; a new implementation without that call is incomplete. `BedrockCategorizer` gets the same test as `Claude`.
 - [Context attributes are invisible at call sites] → limited to `request_id`, `batch`, `batches`; documented in the package.
 - [Transaction IDs are hashes of row content] → an ID is the first 64 bits of a SHA-256 over all identity columns (16 for Sparkasse, including IBAN and references), so guessing a row back from its ID is impractical. A bank whose identity columns are few and guessable (date and amount only) would weaken this; revisit then.
 - [Bank-data tests miss a reformatted value] → the scenarios match case-insensitively and check each amount in raw (`23,45`) and parsed (`23.45`) form.
