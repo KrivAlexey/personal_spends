@@ -90,13 +90,12 @@ After pushing fixes for review comments, answer every unresolved review thread o
 # Each node: id = <thread id>, root.nodes[0].databaseId = <comment id>, latest.nodes[0].body = the latest comment
 gh api graphql -f query='query{repository(owner:"<owner>",name:"<repo>"){pullRequest(number:<PR>){reviewThreads(first:100){pageInfo{hasNextPage endCursor} nodes{id isResolved root:comments(first:1){nodes{databaseId body}} latest:comments(last:1){nodes{body}}}}}}}'
 # If hasNextPage is true, run it again with reviewThreads(first:100, after:"<endCursor>") until it's false
-gh api -X POST repos/<owner>/<repo>/pulls/<PR>/comments/<comment id>/replies -f body="<reply>
-
-<!-- ship-reply -->"
+# Write the reply to a file (any backticks, $ or quotes stay literal), ending with the marker line
+gh api -X POST repos/<owner>/<repo>/pulls/<PR>/comments/<comment id>/replies -F body=@<reply file>
 gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id="<thread id>"
 ```
 
-Every reply ends with the hidden marker `<!-- ship-reply -->`. GitHub doesn't render it, but it stays in the `body` the query returns. It marks the reply as yours even though the agent may post under the owner's login.
+Every reply ends with a blank line and the hidden marker `<!-- ship-reply -->`. GitHub doesn't render the marker, but it stays in the `body` the query returns. It marks the reply as yours even though the agent may post under the owner's login. Pass the reply as a file (`-F body=@<file>`, capital `-F`; `-f` would post the text `@<file>` literally), never inline in a shell string.
 
 - **Fixed:** reply `Fixed in <SHA>: <what changed>` plus the marker, then resolve the thread.
 - **Not fixed** (waiting for the owner, declined, or out of scope): reply `Not fixed: <reason>` plus the marker, and leave the thread open.
