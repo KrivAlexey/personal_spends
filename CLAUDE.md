@@ -14,17 +14,6 @@ v1 is the smallest end-to-end path: CSV upload, serial categorization, DynamoDB 
 
 Read the relevant doc before changing a subsystem; update it in the same PR when the change alters what it says.
 
-## Project Structure
-
-```
-cmd/          lambda/, server/ (localhost:8080), mcp/ (stdio) — thin main.go files (not started)
-internal/     categorizer, parser, storage, categories, ingest, handler (upload only); mcp (not started)
-terraform/    flat main.tf
-docs/         architecture.md, decisions/
-openspec/     specs/, changes/
-samples/      test fixtures — fake data only
-```
-
 ## Development
 
 Prerequisites: Go 1.26+ (per `go.mod`), AWS CLI configured, Terraform 1.6+, `ANTHROPIC_API_KEY` in `.env`.
@@ -37,7 +26,7 @@ cd terraform && terraform init && terraform plan   # apply only when asked
 
 ## Code Conventions
 
-- Standard Go project layout: `cmd/` for entry points, `internal/` for all shared logic
+- `samples/` holds test fixtures — fake data only
 - Errors returned, not panicked — `fmt.Errorf("context: %w", err)`
 - `context.Context` as the first argument in every function that does I/O
 - No global state — dependencies injected via structs
@@ -49,7 +38,6 @@ cd terraform && terraform init && terraform plan   # apply only when asked
 ## Go skills and agents
 
 - Go skills (samber) live in `.agents/skills/golang-*`. `.claude/rules/go.md` loads on the first `.go` file touched and lists which to read; `openspec/config.yaml` repeats this for `/opsx:apply`.
-- Agents in `.claude/agents/` preload their skills: `go-test-writer` (red-phase tests), `go-reviewer` (read-only review before a PR), `go-doc-writer` (godoc, ADRs, docs).
 
 ## Working mode
 
