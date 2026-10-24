@@ -63,6 +63,17 @@ When a request fails with `500`, the system SHALL write exactly one ERROR record
 - **WHEN** an upload fails because the categorizer returns an error
 - **THEN** exactly one ERROR record is written, and its `error` contains the categorizer's error text
 
+### Requirement: Client cancellations are logged as warnings
+When a request fails because its own context was cancelled (the client disconnected), the system SHALL write one WARN record instead of the ERROR record, with `method`, `route`, `bank` (when present, capped) and `error`. A failure from `context.DeadlineExceeded`, or from a cancellation the request's context didn't cause, SHALL stay ERROR. The HTTP response stays as `rest-api` specifies.
+
+#### Scenario: Client disconnects during categorization
+- **WHEN** the client of `/uploads/csv?bank=sparkasse` disconnects while a categorizer batch is running, and the import returns an error wrapping `context.Canceled`
+- **THEN** one WARN record is written with `bank=sparkasse` and an `error` containing `context canceled`, and no ERROR record is written
+
+#### Scenario: Timeout stays an error
+- **WHEN** an upload fails with an error wrapping `context.DeadlineExceeded`
+- **THEN** one ERROR record is written, as for any other internal failure
+
 ### Requirement: Handler panics are logged and answered
 When a handler panics, the system SHALL write exactly one ERROR record with `method`, `route` and `stack` (stack trace, never the panic value), and still the access record, whose `status` is what the client received. A client with no response bytes yet SHALL receive `500` with the body `internal error`; if the response has started, the connection SHALL be closed so a cut-off response isn't taken as complete.
 
