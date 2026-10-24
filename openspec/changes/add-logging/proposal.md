@@ -6,8 +6,8 @@
 
 - Structured logging with `log/slog`. A single logger is built from `LOG_LEVEL` (`debug|info|warn|error`, default `info`) and `LOG_FORMAT` (`text|json`, default `text`) and injected into the handler, importer, categorizer and store.
 - Every HTTP request gets a request ID, and every record logged while serving the request carries it.
-- Every request logs one INFO access record: method, path, status, duration.
-- A 500 logs one ERROR record with the endpoint, `bank` and the full wrapped error chain. The response body stays generic.
+- Every request logs one INFO access record: `method`, `route` (the matched route pattern, never the raw path), `status`, `duration_ms`.
+- A 500 logs one ERROR record with `method`, `route`, `bank` and the full wrapped error chain. The response body stays generic.
 - A 400 logs a WARN record with a fixed-text reason. A caller-supplied `bank` value is cut to 64 runes (Unicode characters) in every record.
 - DEBUG records trace normal processing with counts, timings and token usage: rows parsed, pending skipped, already known, each Claude batch (size, duration, input/output tokens, stop reason), each save, and the import summary.
 - DynamoDB retry attempts log at WARN.
