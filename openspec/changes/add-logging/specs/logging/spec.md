@@ -49,7 +49,7 @@ The system SHALL write one INFO record when it finishes serving each HTTP reques
 - **THEN** the INFO access record is still written, with `status=500`
 
 #### Scenario: Unknown path
-- **WHEN** `GET /REWE-23,45` followed by 100 KB of `A` returns `404`
+- **WHEN** a `GET` whose path is `/REWE-23,45` followed by 100 KB of `A` (in the path, not the body) returns `404`
 - **THEN** the access record has `route=unmatched` and `status=404`, and neither `REWE` nor any part of the path appears in the log output
 
 ### Requirement: Internal errors are logged with their cause
@@ -84,6 +84,10 @@ When a handler panics, the system SHALL write exactly one ERROR record with `met
 #### Scenario: Panic after the response started
 - **WHEN** a handler writes `200` and part of its body, then panics
 - **THEN** one ERROR record is written, the access record is written with `status=200` (what the client received), and the connection is closed without completing the response
+
+#### Scenario: Deliberate abort
+- **WHEN** a handler panics with `http.ErrAbortHandler` before writing anything
+- **THEN** no ERROR record is written and no `500` is sent, the access record has `status=0` (nothing was sent), and the connection is closed. The connection-close part holds under `net/http`; behind the Lambda adapter it is decided when `cmd/lambda` lands
 
 ### Requirement: Rejected requests are logged with the reason
 When a request is rejected with `400`, the system SHALL write one WARN record with `method`, `route`, `bank` (when present) and `reason`. The `reason` SHALL be fixed text that contains no caller input. In every record, a `bank` value longer than 64 runes (Unicode characters, not bytes) SHALL be cut to its first 64 runes followed by `…`.
@@ -142,7 +146,7 @@ When a store operation retries because items were left unprocessed, the system S
 - **THEN** before the first retry a WARN record is written with `operation=batch_write`, `attempt=1` and `unprocessed=3`
 
 ### Requirement: Bank data never reaches the logs
-No log record, at any level and including the `error` field, SHALL contain the request body, a raw CSV row or cell value, a transaction's merchant, description or amount, the text of a Claude request or response, or a secret (`ANTHROPIC_API_KEY`, `API_KEY`, the `X-API-Key` header). Records MAY contain counts, durations, token usage, bank names, transaction IDs, expense dates, category names and status codes.
+No log record, at any level and including the `error` field, SHALL contain the request body, a raw CSV row or cell value, a transaction's merchant, description or amount, the text of a Claude request or response, or a secret (`ANTHROPIC_API_KEY`, `API_KEY`, the `X-API-Key` header). Records MAY contain counts, durations, token usage, bank names, expense dates, category names and status codes.
 
 #### Scenario: Debug upload of a real-looking export
 - **WHEN** an export containing the merchant `REWE Markt GmbH`, the description `Kartenzahlung 12.03` and the amount `-23,45` is uploaded with `LOG_LEVEL=debug`

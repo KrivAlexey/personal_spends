@@ -29,7 +29,8 @@
 - New `internal/logging` package: logger construction from level/format, request-ID context helpers, and a `slog.Handler` wrapper that adds `request_id` from the context.
 - Constructor signatures gain a `*slog.Logger`: `handler.New`, `ingest.NewImporter`, the Claude categorizer, the DynamoDB store. A nil logger means discard, so existing tests don't need one. These are not core interfaces. The `Categorizer` method signature is unchanged; only its contract changes (see Modified Capabilities).
 - `internal/handler`: request middleware (request ID + access record), ERROR on 500, WARN on 400.
-- `internal/storage`, `internal/parser`: error messages stop embedding expense and cell content.
+- `internal/storage`: error messages stop embedding expense content and transaction IDs, and name the expense by date and batch position.
+- `internal/parser`: cell-parse failures become a typed `*parser.ParseError{Column, Row}` that names the column and row but not the value, and no longer wraps the `strconv`/`time` error. Callers tell parse failures from I/O errors with `errors.As`; #91 relies on this to answer them with `400`. The `csv-import` spec doesn't describe error content, so it gets no delta.
 - Docs: new ADR (slog, injection, format, log-once rule, no bank data), `docs/architecture.md` Configuration table (`LOG_LEVEL`, `LOG_FORMAT`) and a short Logging section.
 - Out of scope: `cmd/*` wiring (doesn't exist yet; it calls `logging.New` when it lands and stops startup on its error), Lambda/Terraform env vars, metrics and tracing, MCP server logging (stdout is the protocol channel there, so it will need stderr, decided when `internal/mcp` lands).
 - No new dependencies.
