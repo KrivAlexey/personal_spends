@@ -70,8 +70,16 @@ Closes #<N>
 gh pr checks <PR> --watch
 ```
 
+When the watch finishes, write the `ci` result into the PR body's CI section. `gh pr edit` fails on the deprecated Projects (classic) GraphQL field, so use:
+
+```bash
+gh api -X PATCH repos/KrivAlexey/personal_spends/pulls/<PR> -F body=@<file>
+```
+
+If `ci` failed: fix, push, watch again.
+
 If the PR is stacked on another PR's branch, say so in its first line and note that it retargets to `main` once that PR merges.
 
 ## 6. Report
 
-Give the issue and PR URLs, plus anything that was left out and why. **Never merge.** Merging is the owner's step.
+Give the issue and PR URLs and the `ci` result. Report done only when it's green. Also list anything that was left out and why. **Never merge.** Merging is the owner's step.
