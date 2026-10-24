@@ -87,16 +87,29 @@ If the PR is stacked on another PR's branch, say so in its first line and note t
 After pushing fixes for review comments, answer every unresolved review thread on the PR. When the run is only about answering review comments on an existing PR, skip steps 1–5 and start here.
 
 ```bash
-# Each node: id = <thread id>, first.nodes[0].databaseId = <comment id>, last.nodes[0].body = the latest comment
-gh api graphql -f query='query{repository(owner:"<owner>",name:"<repo>"){pullRequest(number:<PR>){reviewThreads(first:100){pageInfo{hasNextPage endCursor} nodes{id isResolved first:comments(first:1){nodes{databaseId body}} last:comments(last:1){nodes{body}}}}}}}'
+# Each node: id = <thread id>, root.nodes[0].databaseId = <comment id>, latest.nodes[0].body = the latest comment
+gh api graphql -f query='query{repository(owner:"<owner>",name:"<repo>"){pullRequest(number:<PR>){reviewThreads(first:100){pageInfo{hasNextPage endCursor} nodes{id isResolved root:comments(first:1){nodes{databaseId body}} latest:comments(last:1){nodes{body}}}}}}}'
 # If hasNextPage is true, run it again with reviewThreads(first:100, after:"<endCursor>") until it's false
-gh api -X POST repos/<owner>/<repo>/pulls/<PR>/comments/<comment id>/replies -f body="<reply>"
+gh api -X POST repos/<owner>/<repo>/pulls/<PR>/comments/<comment id>/replies -f body="<reply>
+
+<!-- ship-reply -->"
 gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id="<thread id>"
 ```
 
-- **Fixed:** reply starting `Fixed in <SHA>` with what changed, then resolve the thread.
-- **Not fixed** (waiting for the owner, declined, or out of scope): reply starting `Not fixed` with the reason and leave the thread open.
-- Skip threads where `isResolved` is true, and threads whose latest comment starts with `Fixed in` or `Not fixed` (already answered, e.g. by an interrupted run; resolve it if it says `Fixed in` and is still open, don't reply again). Match on these words, not the author: the agent may post under the owner's login, and a newer comment from the owner needs an answer.
+Every reply ends with the hidden marker `<!-- ship-reply -->`. GitHub doesn't render it, but it stays in the `body` the query returns. It marks the reply as yours even though the agent may post under the owner's login.
+
+- **Fixed:** reply `Fixed in <SHA>: <what changed>` plus the marker, then resolve the thread.
+- **Not fixed** (waiting for the owner, declined, or out of scope): reply `Not fixed: <reason>` plus the marker, and leave the thread open.
+
+Decide each thread by its latest comment:
+
+| Latest comment | Action |
+|---|---|
+| Thread `isResolved` | Skip. |
+| Has the marker and starts `Fixed in` | Already answered (e.g. by an interrupted run). Resolve it if still open; don't reply again. |
+| Has the marker and starts `Not fixed` | Check again against the current code. If a pushed commit now fixes it, reply `Fixed in` and resolve. Otherwise leave it, with no new reply. |
+| No marker (the reviewer or the owner) | Answer it as Fixed or Not fixed. |
+
 - Page through all threads before reporting done.
 - State only what you checked; a reply is a claim the owner will rely on.
 
