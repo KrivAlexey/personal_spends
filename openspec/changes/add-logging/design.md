@@ -32,7 +32,7 @@ The batch DEBUG record is written right after `Messages.New` returns and before 
 ### Log once, at the boundary
 Lower layers return wrapped errors and never log them. `uploadCSV` writes the single ERROR record on 500.
 
-A client that disconnects isn't a server fault, so `uploadCSV` logs at WARN when `errors.Is(err, context.Canceled) && r.Context().Err() != nil`. The second check makes sure it was the request's own context: a `context.Canceled` from some internal context we cancelled ourselves would be a bug and stays ERROR. `context.DeadlineExceeded` also stays ERROR, because a timeout is ours to fix. The response doesn't change; the client is gone and never reads it. The one exception is the store's retry WARN: a retry that succeeds returns no error, so it would otherwise be invisible.
+A client that disconnects isn't a server fault, so `uploadCSV` logs at WARN when `errors.Is(err, context.Canceled) && errors.Is(r.Context().Err(), context.Canceled)`. The second check makes sure the request's own context was cancelled, not merely done (`Err() != nil` is also true after its deadline): a `context.Canceled` from some internal context we cancelled ourselves would be a bug and stays ERROR. `context.DeadlineExceeded` also stays ERROR, because a timeout is ours to fix. The response doesn't change; the client is gone and never reads it. The one exception is the store's retry WARN: a retry that succeeds returns no error, so it would otherwise be invisible.
 
 ### Middleware owns the request ID and access record
 `Handler.Routes()` wraps the mux in a middleware that:
