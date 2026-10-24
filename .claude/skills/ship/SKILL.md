@@ -84,18 +84,20 @@ If the PR is stacked on another PR's branch, say so in its first line and note t
 
 ## 6. Review threads
 
-After pushing fixes for review comments, answer every unresolved review thread on the PR:
+After pushing fixes for review comments, answer every unresolved review thread on the PR. When the run is only about answering review comments on an existing PR, skip steps 1–5 and start here.
 
 ```bash
-# Each node: id = <thread id>, comments.nodes[0].databaseId = <comment id>
-gh api graphql -f query='query{repository(owner:"<owner>",name:"<repo>"){pullRequest(number:<PR>){reviewThreads(first:100){pageInfo{hasNextPage} nodes{id isResolved comments(first:1){nodes{databaseId body}}}}}}}'
+# Each node: id = <thread id>, first.nodes[0].databaseId = <comment id>, last.nodes[0].body = the latest comment
+gh api graphql -f query='query{repository(owner:"<owner>",name:"<repo>"){pullRequest(number:<PR>){reviewThreads(first:100){pageInfo{hasNextPage endCursor} nodes{id isResolved first:comments(first:1){nodes{databaseId body}} last:comments(last:1){nodes{body}}}}}}}'
+# If hasNextPage is true, run it again with reviewThreads(first:100, after:"<endCursor>") until it's false
 gh api -X POST repos/<owner>/<repo>/pulls/<PR>/comments/<comment id>/replies -f body="<reply>"
 gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id="<thread id>"
 ```
 
-- **Fixed:** reply with the commit SHA(s) and what changed, then resolve the thread.
-- **Not fixed** (waiting for the owner, declined, or out of scope): reply with the reason and leave the thread open.
-- Skip threads where `isResolved` is true. If `hasNextPage` is true, say so instead of reporting done.
+- **Fixed:** reply starting `Fixed in <SHA>` with what changed, then resolve the thread.
+- **Not fixed** (waiting for the owner, declined, or out of scope): reply starting `Not fixed` with the reason and leave the thread open.
+- Skip threads where `isResolved` is true, and threads whose latest comment starts with `Fixed in` or `Not fixed` (already answered, e.g. by an interrupted run; resolve it if it says `Fixed in` and is still open, don't reply again). Match on these words, not the author: the agent may post under the owner's login, and a newer comment from the owner needs an answer.
+- Page through all threads before reporting done.
 - State only what you checked; a reply is a claim the owner will rely on.
 
 ## 7. Report
