@@ -1,6 +1,6 @@
 ---
 name: ship
-description: Turn the current uncommitted or unpushed changes into GitHub issue(s), branch(es) and PR(s) following this repo's git workflow. Use when the owner says "ship", "/ship", "create an issue and PR for my changes", or "open a PR for this".
+description: Turn the current uncommitted or unpushed changes into GitHub issue(s), branch(es) and PR(s) following this repo's git workflow. Use when the owner says "ship", "/ship", "create an issue and PR for my changes", or "open a PR for this". Also use after fixing review comments on a PR, to reply to and resolve its review threads.
 ---
 
 # /ship
@@ -84,13 +84,19 @@ If the PR is stacked on another PR's branch, say so in its first line and note t
 
 ## 6. Review threads
 
-After pushing fixes for review comments, answer every review thread on the PR:
+After pushing fixes for review comments, answer every unresolved review thread on the PR:
 
 ```bash
-gh api graphql -f query='query{repository(owner:"<owner>",name:"<repo>"){pullRequest(number:<PR>){reviewThreads(first:100){nodes{id isResolved comments(first:1){nodes{databaseId body}}}}}}}'
-gh api -X POST repos/<owner>/<repo>/pulls/<PR>/comments/<databaseId>/replies -f body="<reply>"
-gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id=<thread id>
+# Each node: id = <thread id>, comments.nodes[0].databaseId = <comment id>
+gh api graphql -f query='query{repository(owner:"<owner>",name:"<repo>"){pullRequest(number:<PR>){reviewThreads(first:100){pageInfo{hasNextPage} nodes{id isResolved comments(first:1){nodes{databaseId body}}}}}}}'
+gh api -X POST repos/<owner>/<repo>/pulls/<PR>/comments/<comment id>/replies -f body="<reply>"
+gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id="<thread id>"
 ```
+
+- **Fixed:** reply with the commit SHA(s) and what changed, then resolve the thread.
+- **Not fixed** (waiting for the owner, declined, or out of scope): reply with the reason and leave the thread open.
+- Skip threads where `isResolved` is true. If `hasNextPage` is true, say so instead of reporting done.
+- State only what you checked; a reply is a claim the owner will rely on.
 
 ## 7. Report
 
