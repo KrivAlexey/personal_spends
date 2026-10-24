@@ -40,8 +40,8 @@ Lower layers return wrapped errors and never log them. `uploadCSV` writes the si
 
 The access record and panic handling run in a `defer`, so they happen however `next.ServeHTTP` exits. Code placed after the call would be skipped by a panic, which unwinds straight through the middleware to `net/http`'s own recover: that prints plain text to stderr without `request_id` and drops the connection, so the client gets no response at all. #36 (index out of range on bad Claude output) was this kind of panic, fixed before the endpoint existed. The deferred function:
 1. calls `recover()`. On a panic other than `http.ErrAbortHandler` it writes the ERROR record with `stack` from `debug.Stack()`. It logs the stack, not the panic value, because the value is free text that could carry bank data.
-2. if the status writer has sent nothing yet, writes `500 internal error`.
-3. writes the INFO access record, with status `500` after a recovered panic.
+2. on such a panic, if the status writer has sent nothing yet, writes `500 internal error`. A deliberate `http.ErrAbortHandler` skips steps 1 and 2: the handler chose to drop the connection, so it gets no 500 and no ERROR record.
+3. writes the INFO access record with the status the client actually received: `500` after step 2, the already-sent status (e.g. `200`) for a panic after the response started, and `0` for a deliberate abort before anything was sent.
 4. only then, if the response had already started (or the handler aborted on purpose with `http.ErrAbortHandler`), re-panics with `http.ErrAbortHandler`. `net/http` treats that as a silent abort and closes the connection. The re-panic must come last: it leaves the deferred function at once, so any step after it would never run.
 
 The status writer counts the response as started on the first `WriteHeader` or `Write` (a `Write` without `WriteHeader` sends an implicit `200`). It implements `Unwrap() http.ResponseWriter`, so `http.ResponseController` still reaches `Flusher` and `Hijacker` on the underlying writer.

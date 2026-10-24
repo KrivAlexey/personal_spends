@@ -64,7 +64,7 @@ When a request fails with `500`, the system SHALL write exactly one ERROR record
 - **THEN** exactly one ERROR record is written, and its `error` contains the categorizer's error text
 
 ### Requirement: Handler panics are logged and answered
-When a handler panics, the system SHALL write exactly one ERROR record with `method`, `route` and `stack` (stack trace, never the panic value), and still the access record with `status=500`. A client with no response bytes yet SHALL receive `500` with the body `internal error`; if the response has started, the connection SHALL be closed so a cut-off response isn't taken as complete.
+When a handler panics, the system SHALL write exactly one ERROR record with `method`, `route` and `stack` (stack trace, never the panic value), and still the access record, whose `status` is what the client received. A client with no response bytes yet SHALL receive `500` with the body `internal error`; if the response has started, the connection SHALL be closed so a cut-off response isn't taken as complete.
 
 #### Scenario: Panic before the response starts
 - **WHEN** the upload handler panics with the value `boom REWE` before writing anything
@@ -72,7 +72,7 @@ When a handler panics, the system SHALL write exactly one ERROR record with `met
 
 #### Scenario: Panic after the response started
 - **WHEN** a handler writes `200` and part of its body, then panics
-- **THEN** one ERROR record is written, the access record is written, and the connection is closed without completing the response
+- **THEN** one ERROR record is written, the access record is written with `status=200` (what the client received), and the connection is closed without completing the response
 
 ### Requirement: Rejected requests are logged with the reason
 When a request is rejected with `400`, the system SHALL write one WARN record with `method`, `route`, `bank` (when present) and `reason`. The `reason` SHALL be fixed text that contains no caller input. In every record, a `bank` value longer than 64 runes (Unicode characters, not bytes) SHALL be cut to its first 64 runes followed by `…`.
