@@ -12,13 +12,13 @@
 - [ ] 2.4 `internal/categorizer`: a shared contract test helper (e.g. `categorizertest.AssertBatchLogging`) that every `Categorizer` implementation's tests MUST call, the importer's fake included; a new implementation without that call is incomplete. Run it against `Claude` with the existing fake HTTP server for the `categorizer` spec's scenarios: batch record fields, `max_tokens` record written before the validation error, context attributes carried, no record when the API call fails
 - [ ] 2.5 `internal/storage`: WARN retry record (`operation`, `attempt` counting retries from 1, `unprocessed`) via the fake `dynamoDBAPI`; write/marshal errors contain no merchant, description or amount
 - [ ] 2.6 `internal/parser`: a malformed amount or date cell yields a `*ParseError` (found with `errors.As`) naming the column and row, without the raw value in either `12,3x` or `12.3x` form; an I/O error from the reader is not a `*ParseError`
-- [ ] 2.7 Handler-level secrets test: the spec's "Anthropic key in an error path" scenario, with a sentinel key (`X-API-Key` waits for the auth middleware change)
+- [ ] 2.7 Handler-level secrets test for the spec's "Anthropic key in an error path" scenario. Use the real `categorizer.Claude` (not a fake, whose error never touches the key) against an `httptest` server answering `401`, the real importer and a fake store. Assert the server saw the sentinel in `X-Api-Key` (the control that lets the test fail) and the log buffer doesn't contain it. `X-API-Key` waits for the auth middleware change
 - [ ] 2.8 Handler-level bank-data test: a full fake import at DEBUG with the spec's fixture values, asserting none of them appears in the buffer, case-insensitively and with each amount in raw and parsed form
 
 ## 3. Implementation
 
 - [ ] 3.1 `internal/logging`: `New(w, level, format)`, `WithAttrs(ctx, …)` (replaces an existing key), and the context-attribute `slog.Handler` wrapper, overriding `WithAttrs` and `WithGroup` to stay wrapped
-- [ ] 3.2 Add a `*slog.Logger` parameter (nil = discard) to `handler.New`, `ingest.NewImporter`, `categorizer.NewClaude`, `storage.NewStore`, and update callers and tests
+- [ ] 3.2 Let `categorizer.NewClaude` take extra `option.RequestOption`s, so tests outside the package can point it at a fake server with `option.WithBaseURL` (2.7). Add a `*slog.Logger` parameter (nil = discard) to `handler.New`, `ingest.NewImporter`, `categorizer.NewClaude`, `storage.NewStore`, and update callers and tests
 - [ ] 3.3 Handler, in three parts:
   - middleware: request ID in the context; a status writer that counts the first `WriteHeader` or `Write` as started and implements `Unwrap`; the INFO access record with `route` from the `r.WithContext` copy's `Pattern` and the status the client received
   - panic `defer`, in the design's order: recover into an ERROR record with `stack`, write a 500 if nothing was sent, write the access record, re-panic `http.ErrAbortHandler` last when the response had started. A deliberate `http.ErrAbortHandler` gets no ERROR and no 500

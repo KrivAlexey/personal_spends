@@ -153,8 +153,8 @@ No log record, at any level and including the `error` field, SHALL contain the r
 - **THEN** the record that logs the failure names the column, and neither `12,3x` nor `12.3x` appears in the log output. The record is ERROR while `rest-api` answers parse failures with `500`; once #91 makes them `400`, the same holds for the WARN record
 
 #### Scenario: Anthropic key in an error path
-- **WHEN** an upload fails because the categorizer, constructed with the API key `sentinel-anthropic-key`, returns an error, with `LOG_LEVEL=debug`
-- **THEN** `sentinel-anthropic-key` does not appear anywhere in the log output
+- **WHEN** an upload runs with `LOG_LEVEL=debug` through the real `categorizer.Claude`, constructed with the API key `sentinel-anthropic-key` and pointed at a local fake API server that answers `401` with an Anthropic error body
+- **THEN** the fake server received `sentinel-anthropic-key` in the `X-Api-Key` header (so the key really was in play), the upload fails with one ERROR record, and `sentinel-anthropic-key` does not appear anywhere in the log output
 
 The same rule covers the `X-API-Key` header. Nothing reads that header yet, so a test for it would pass trivially; the change that adds the auth middleware adds that scenario and its test.
 
