@@ -70,8 +70,18 @@ Closes #<N>
 gh pr checks <PR> --watch
 ```
 
+When the watch finishes, write the `ci` result into the PR body's CI section. The PATCH replaces the whole body, so start from the current one and change only the `## CI` section. `gh pr edit` fails on the deprecated Projects (classic) GraphQL field, so use:
+
+```bash
+gh pr view <PR> --json body -q .body > <file>
+# edit only the ## CI section of <file>: result, commit SHA, run link
+gh api -X PATCH 'repos/{owner}/{repo}/pulls/<PR>' -F body=@<file>
+```
+
+If `ci` failed: fix, push, then repeat this step (watch and update the CI section) until it's green, so the body never keeps a stale result.
+
 If the PR is stacked on another PR's branch, say so in its first line and note that it retargets to `main` once that PR merges.
 
 ## 6. Report
 
-Give the issue and PR URLs, plus anything that was left out and why. **Never merge.** Merging is the owner's step.
+Give the issue and PR URLs and the `ci` result. Report done only when it's green. Also list anything that was left out and why. **Never merge.** Merging is the owner's step.
