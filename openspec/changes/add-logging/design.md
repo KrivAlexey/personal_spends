@@ -39,10 +39,12 @@ Lower layers return wrapped errors and never log them. `uploadCSV` writes the si
 3. writes the INFO access record when the handler returns, with `route` read from `r.Pattern`. `ServeMux` sets `Pattern` on the request it is handed, which is the copy made by `r.WithContext` for `request_id`. The middleware keeps that copy in a variable and reads `Pattern` from it after `next.ServeHTTP`; reading the original request would give `""` and log every route as `unmatched`. It is empty for a 404, logged as `unmatched`.
 
 The access record and panic handling run in a `defer`, so they happen however `next.ServeHTTP` exits. Code placed after the call would be skipped by a panic, which unwinds straight through the middleware to `net/http`'s own recover: that prints plain text to stderr without `request_id` and drops the connection, so the client gets no response at all. #36 (index out of range on bad Claude output) was this kind of panic, fixed before the endpoint existed. The deferred function:
-- calls `recover()`. On a panic it writes the ERROR record with `stack` from `debug.Stack()`. It logs the stack, not the panic value, because the value is free text that could carry bank data.
-- writes `500 internal error` if the status writer has written nothing yet. If the response has already started, it re-panics with `http.ErrAbortHandler`, which `net/http` treats as a silent abort and answers by closing the connection.
-- re-panics `http.ErrAbortHandler` itself unlogged when a handler aborts on purpose.
-- writes the INFO access record last, with the status writer's status (`500` after a recovered panic).
+1. calls `recover()`. On a panic other than `http.ErrAbortHandler` it writes the ERROR record with `stack` from `debug.Stack()`. It logs the stack, not the panic value, because the value is free text that could carry bank data.
+2. if the status writer has sent nothing yet, writes `500 internal error`.
+3. writes the INFO access record, with status `500` after a recovered panic.
+4. only then, if the response had already started (or the handler aborted on purpose with `http.ErrAbortHandler`), re-panics with `http.ErrAbortHandler`. `net/http` treats that as a silent abort and closes the connection. The re-panic must come last: it leaves the deferred function at once, so any step after it would never run.
+
+The status writer counts the response as started on the first `WriteHeader` or `Write` (a `Write` without `WriteHeader` sends an implicit `200`). It implements `Unwrap() http.ResponseWriter`, so `http.ResponseController` still reaches `Flusher` and `Hijacker` on the underlying writer.
 
 Panics in goroutines a handler starts, process kills and Lambda timeouts are out of reach of any `recover` in the middleware. A DEBUG "request started" record would leave a trace for those; revisit when `cmd/lambda` lands.
 
