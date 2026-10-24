@@ -75,7 +75,7 @@ When a request fails because its own context was cancelled (the client disconnec
 - **THEN** one ERROR record is written, as for any other internal failure
 
 ### Requirement: Handler panics are logged and answered
-When a handler panics, the system SHALL write exactly one ERROR record with `method`, `route` and `stack` (stack trace, never the panic value), and still the access record, whose `status` is what the client received. A client with no response bytes yet SHALL receive `500` with the body `internal error`; if the response has started, the connection SHALL be closed so a cut-off response isn't taken as complete.
+When a handler panics with anything but `http.ErrAbortHandler` (a deliberate abort, see its scenario), the system SHALL write exactly one ERROR record with `method`, `route` and `stack` (stack trace, never the panic value), and still the access record, whose `status` is what the client received. A client with no response bytes yet SHALL receive `500` with the body `internal error`; if the response has started, the connection SHALL be closed so a cut-off response isn't taken as complete.
 
 #### Scenario: Panic before the response starts
 - **WHEN** the upload handler panics with the value `boom REWE` before writing anything
