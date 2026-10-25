@@ -93,7 +93,7 @@ func (store *Store) PutExpense(ctx context.Context, expense Expense) error {
 
 	av, err := attributevalue.MarshalMap(item)
 	if err != nil {
-		return fmt.Errorf("can't marshal map Expense:%v err:%w", expense, err)
+		return fmt.Errorf("storage: marshal expense dated %s: %w", expense.Date.Format(time.DateOnly), err)
 	}
 
 	putItemInput := &dynamodb.PutItemInput{
@@ -103,7 +103,7 @@ func (store *Store) PutExpense(ctx context.Context, expense Expense) error {
 
 	_, err = store.client.PutItem(ctx, putItemInput)
 	if err != nil {
-		return fmt.Errorf("can't write Expense:%v into the DB. err: %w", expense, err)
+		return fmt.Errorf("storage: put expense dated %s: %w", expense.Date.Format(time.DateOnly), err)
 	}
 
 	return nil
@@ -114,14 +114,18 @@ func (store *Store) SaveExpenses(ctx context.Context, expenses []Expense) error 
 		return nil
 	}
 
+	// Errors name an expense by position and date only: its other fields are
+	// bank data, and its ID hashes them (ADR 0013).
+	pos := 0
 	for chunk := range slices.Chunk(expenses, MaxBatchItems) {
 		writeRequests := make([]types.WriteRequest, len(chunk))
 
 		for i, e := range chunk {
+			pos++
 			item := newExpenseItem(e)
 			av, err := attributevalue.MarshalMap(item)
 			if err != nil {
-				return fmt.Errorf("can't marshal map expenses chunk err:%w", err)
+				return fmt.Errorf("storage: marshal expense %d of %d, dated %s: %w", pos, len(expenses), e.Date.Format(time.DateOnly), err)
 			}
 			writeRequests[i] = types.WriteRequest{
 				PutRequest: &types.PutRequest{
@@ -132,7 +136,7 @@ func (store *Store) SaveExpenses(ctx context.Context, expenses []Expense) error 
 
 		err := store.writeChunkWithRetries(ctx, writeRequests)
 		if err != nil {
-			return fmt.Errorf("write chunk of expenses error. err:%w", err)
+			return fmt.Errorf("storage: write chunk of expenses: %w", err)
 		}
 	}
 	return nil
@@ -154,13 +158,24 @@ func (store *Store) writeChunkWithRetries(ctx context.Context, requests []types.
 			return nil
 		}
 		requestItems = output.UnprocessedItems
+		if attempt+1 == MaxRetryAttempts {
+			break
+		}
 
+		store.logRetry(ctx, "batch_write", attempt+1, len(requestItems[store.table]))
 		if err := waitBackoff(ctx, attempt); err != nil {
 			return fmt.Errorf("batch write cancelled: %w", err)
 		}
 	}
 
 	return fmt.Errorf("batch write: %d items still unprocessed after %d attempts", len(requestItems[store.table]), MaxRetryAttempts)
+}
+
+// logRetry writes the WARN record before retry number attempt (from 1). A retry
+// that succeeds returns no error, so this is the only trace of throttling.
+func (store *Store) logRetry(ctx context.Context, operation string, attempt, unprocessed int) {
+	store.logger.WarnContext(ctx, "retrying unprocessed items",
+		"operation", operation, "attempt", attempt, "unprocessed", unprocessed)
 }
 
 // waitBackoff sleeps before retry attempt+1, or returns ctx's error if it ends first.
@@ -194,7 +209,11 @@ func (store *Store) getChunkWithRetries(ctx context.Context, keys []map[string]t
 			return nil
 		}
 		requestItems = output.UnprocessedKeys
+		if attempt+1 == MaxRetryAttempts {
+			break
+		}
 
+		store.logRetry(ctx, "batch_get", attempt+1, len(requestItems[store.table].Keys))
 		if err := waitBackoff(ctx, attempt); err != nil {
 			return fmt.Errorf("batch get cancelled: %w", err)
 		}

@@ -17,16 +17,16 @@
 
 ## 3. Implementation
 
-- [ ] 3.1 `internal/logging`: `New(w, level, format)`, `WithAttrs(ctx, …)` (replaces an existing key), and the context-attribute `slog.Handler` wrapper, overriding `WithAttrs` and `WithGroup` to stay wrapped
-- [ ] 3.2 Let `categorizer.NewClaude` take extra `option.RequestOption`s, so tests outside the package can point it at a fake server with `option.WithBaseURL` (2.7). Add a `*slog.Logger` parameter (nil = discard) to `handler.New`, `ingest.NewImporter`, `categorizer.NewClaude`, `storage.NewStore`, and update callers and tests
-- [ ] 3.3 Handler, in three parts:
+- [x] 3.1 `internal/logging`: `New(w, level, format)`, `WithAttrs(ctx, …)` (replaces an existing key), and the context-attribute `slog.Handler` wrapper, overriding `WithAttrs` and `WithGroup` to stay wrapped
+- [x] 3.2 Let `categorizer.NewClaude` take extra `option.RequestOption`s, so tests outside the package can point it at a fake server with `option.WithBaseURL` (2.7). Add a `*slog.Logger` parameter (nil = discard) to `handler.New`, `ingest.NewImporter`, `categorizer.NewClaude`, `storage.NewStore`, and update callers and tests
+- [x] 3.3 Handler, in three parts:
   - middleware: request ID in the context; a status writer that counts the first `WriteHeader` or `Write` as started and implements `Unwrap`; the INFO access record with `route` from the `r.WithContext` copy's `Pattern` and the status the client received
   - panic `defer`, in the design's order: recover into an ERROR record with `stack`, write a 500 if nothing was sent, write the access record, re-panic `http.ErrAbortHandler` last when the response had started. A deliberate `http.ErrAbortHandler` gets no ERROR and no 500
   - ERROR on 500 (WARN when the request's own context was cancelled), WARN on 400 with fixed `reason`, `bank` cut to 64 runes in every record
-- [ ] 3.4 Importer: DEBUG records, plus `batch`/`batches` context attributes around each batch
-- [ ] 3.5 Claude: time `Messages.New`, write the batch DEBUG record before `unpackCategorizeBatch`, none when `Messages.New` fails
-- [ ] 3.6 Store: WARN on each retry in batch write and batch get, and drop `%v` of `Expense` from error messages (name the expense by date and batch position, not ID)
-- [ ] 3.7 Parser: column-parse failures return `*ParseError{Column, Row}`, whose message drops the raw value and which doesn't wrap the `strconv`/`time` error
+- [x] 3.4 Importer: DEBUG records, plus `batch`/`batches` context attributes around each batch
+- [x] 3.5 Claude: time `Messages.New`, write the batch DEBUG record before `unpackCategorizeBatch`, none when `Messages.New` fails
+- [x] 3.6 Store: WARN on each retry in batch write and batch get, and drop `%v` of `Expense` from error messages (name the expense by date and batch position, not ID)
+- [x] 3.7 Parser: column-parse failures return `*ParseError{Column, Row}`, whose message drops the raw value and which doesn't wrap the `strconv`/`time` error
 - [ ] 3.8 Merge gate: confirm from the Anthropic SDK and AWS SDK (DynamoDB) sources that their error text can't echo request content: prompt or item values, the 4xx response body, the request URL and method. Record the result in the PR. If one can, strip the echoed part where the error enters our code before the PR merges
 - [ ] 3.9 `go build ./... && go vet ./... && go test ./...` passes
 

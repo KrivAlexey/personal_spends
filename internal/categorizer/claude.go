@@ -86,6 +86,7 @@ func (claude *Claude) Categorize(
 	tools := make([]anthropic.ToolUnionParam, 1)
 	tools[0] = anthropic.ToolUnionParam{OfTool: &toolParam}
 
+	start := time.Now()
 	message, err := claude.client.Messages.New(ctx, anthropic.MessageNewParams{
 		Model:     anthropic.ModelClaudeHaiku4_5_20251001,
 		MaxTokens: 1024,
@@ -95,6 +96,14 @@ func (claude *Claude) Categorize(
 	if err != nil {
 		return nil, fmt.Errorf("categorizer: create message: %w", err)
 	}
+	// Logged before validation, so a max_tokens answer that fails it still
+	// shows its stop_reason (#65).
+	claude.logger.DebugContext(ctx, "categorize batch",
+		"size", len(transactions),
+		"duration_ms", time.Since(start).Milliseconds(),
+		"input_tokens", message.Usage.InputTokens,
+		"output_tokens", message.Usage.OutputTokens,
+		"stop_reason", string(message.StopReason))
 
 	return unpackCategorizeBatch(message, transactions)
 }

@@ -124,7 +124,7 @@ func parseRows(ctx context.Context, mapping BankMapping, l layout, r *csv.Reader
 	bankName := mapping.BankName
 	var res ParseResult
 	occurrences := make(map[string]int) // per file: identical rows get -0, -1, …
-	for {
+	for rowNum := 1; ; rowNum++ {
 		if err := ctx.Err(); err != nil {
 			return res, fmt.Errorf("reading csv: %w", err)
 		}
@@ -165,7 +165,8 @@ func parseRows(ctx context.Context, mapping BankMapping, l layout, r *csv.Reader
 				tx.Description = value
 			}
 			if err != nil {
-				return res, fmt.Errorf("parsing column %q: %w", fieldByCol[i], err)
+				// Not wrapped: strconv and time errors quote the cell, which is bank data.
+				return res, &ParseError{Column: fieldByCol[i], Row: rowNum}
 			}
 		}
 

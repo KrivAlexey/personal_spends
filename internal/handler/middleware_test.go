@@ -130,9 +130,7 @@ func panicServer(t *testing.T, imp importer) (*httptest.Server, *logtest.Buffer)
 	mux.HandleFunc("POST /uploads/csv", h.uploadCSV)
 	mux.HandleFunc("GET /after-write", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("partial"))
-		if f, ok := w.(http.Flusher); ok {
-			f.Flush()
-		}
+		_ = http.NewResponseController(w).Flush()
 		panic("boom REWE")
 	})
 	mux.HandleFunc("GET /abort", func(http.ResponseWriter, *http.Request) {
