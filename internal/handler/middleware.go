@@ -68,7 +68,7 @@ func newRequestID() string {
 }
 
 // statusWriter records the status the client receives. The response counts as
-// started on the first WriteHeader or Write.
+// started on the first final (non-1xx) WriteHeader or on the first Write.
 type statusWriter struct {
 	http.ResponseWriter
 	status  int
@@ -76,7 +76,7 @@ type statusWriter struct {
 }
 
 func (w *statusWriter) WriteHeader(code int) {
-	if !w.started {
+	if !w.started && code >= 200 {
 		w.status, w.started = code, true
 	}
 	w.ResponseWriter.WriteHeader(code)

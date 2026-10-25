@@ -3,7 +3,9 @@
 //
 // Only three attributes travel this way: request_id (set by the HTTP
 // middleware) and batch/batches (set by the importer around each batch). Every
-// record logged with a …Context method gets them, from any layer.
+// record logged with a …Context method gets them, from any layer. They land
+// inside any group the logger has opened, so don't log with groups where the
+// operator expects them at the top level.
 package logging
 
 import (
@@ -12,17 +14,25 @@ import (
 	"io"
 	"log/slog"
 	"slices"
+	"strings"
 )
 
 // New returns a logger writing records at or above level ("debug", "info",
 // "warn", "error", case-insensitive; "" = info) in format ("text" or "json";
 // "" = text). An unknown value is an error naming the variable it came from.
 func New(w io.Writer, level, format string) (*slog.Logger, error) {
-	lvl := slog.LevelInfo
-	if level != "" {
-		if err := lvl.UnmarshalText([]byte(level)); err != nil {
-			return nil, fmt.Errorf("logging: invalid LOG_LEVEL %q", level)
-		}
+	var lvl slog.Level
+	switch strings.ToLower(level) {
+	case "debug":
+		lvl = slog.LevelDebug
+	case "", "info":
+		lvl = slog.LevelInfo
+	case "warn":
+		lvl = slog.LevelWarn
+	case "error":
+		lvl = slog.LevelError
+	default:
+		return nil, fmt.Errorf("logging: invalid LOG_LEVEL %q", level)
 	}
 
 	opts := &slog.HandlerOptions{Level: lvl}
@@ -61,7 +71,8 @@ func fromContext(ctx context.Context) []slog.Attr {
 }
 
 // NewHandler wraps h so that every record logged with a context also gets the
-// attributes stored in it by WithAttrs.
+// attributes stored in it by WithAttrs. It returns the interface because the
+// wrapper has nothing to offer beyond it.
 func NewHandler(h slog.Handler) slog.Handler {
 	return ctxHandler{inner: h}
 }

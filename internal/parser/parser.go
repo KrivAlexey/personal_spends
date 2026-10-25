@@ -32,7 +32,8 @@ type ParseResult struct {
 func (parser *Parser) ParseCSV(ctx context.Context, bankName string, r io.Reader) (ParseResult, error) {
 	mapping, err := parser.mappingProvider.GetMapping(ctx, bankName)
 	if err != nil {
-		return ParseResult{}, fmt.Errorf("parser: csv schema is not found for bank: %s: %w", bankName, err) // todo detect and save schema for a new Bank
+		// No bankName: it comes from the caller, and the handler logs this error.
+		return ParseResult{}, fmt.Errorf("parser: get bank mapping: %w", err) // todo detect and save schema for a new Bank
 	}
 
 	if mapping.Encoding == "iso-8859-1" {

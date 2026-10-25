@@ -67,7 +67,8 @@ func (im *Importer) Import(ctx context.Context, bankName string, r io.Reader) (R
 	start := time.Now()
 	parsed, err := im.parser.ParseCSV(ctx, bankName, r)
 	if err != nil {
-		return Result{}, fmt.Errorf("ingest: parse %s export: %w", bankName, err)
+		// No bankName: it comes from the caller, and the handler logs this error.
+		return Result{}, fmt.Errorf("ingest: parse export: %w", err)
 	}
 	res := Result{PendingSkipped: parsed.PendingSkipped}
 	// bankName named an existing mapping, so it is ours, not arbitrary input.
