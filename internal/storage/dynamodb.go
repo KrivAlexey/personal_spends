@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -103,7 +104,7 @@ func (store *Store) PutExpense(ctx context.Context, expense Expense) error {
 
 	_, err = store.client.PutItem(ctx, putItemInput)
 	if err != nil {
-		return fmt.Errorf("storage: put expense dated %s: %w", expense.Date.Format(time.DateOnly), err)
+		return fmt.Errorf("storage: put expense dated %s: %w", expense.Date.Format(time.DateOnly), safeAPIError(err))
 	}
 
 	return nil
@@ -152,7 +153,7 @@ func (store *Store) writeChunkWithRetries(ctx context.Context, requests []types.
 			RequestItems: requestItems,
 		})
 		if err != nil {
-			return fmt.Errorf("batch write item: %w", err)
+			return fmt.Errorf("batch write item: %w", safeAPIError(err))
 		}
 		if len(output.UnprocessedItems) == 0 {
 			return nil
@@ -169,6 +170,21 @@ func (store *Store) writeChunkWithRetries(ctx context.Context, requests []types.
 	}
 
 	return fmt.Errorf("batch write: %d items still unprocessed after %d attempts", len(requestItems[store.table]), MaxRetryAttempts)
+}
+
+// safeAPIError replaces an AWS API error, whose message is server text that
+// could quote item values, with its error code (ADR 0013). Other errors, e.g.
+// context cancellation, pass through.
+func safeAPIError(err error) error {
+	// The method set of smithy.APIError, so smithy-go needn't be imported.
+	apiErr, ok := errors.AsType[interface {
+		error
+		ErrorCode() string
+	}](err)
+	if !ok {
+		return err
+	}
+	return fmt.Errorf("dynamodb api error %s", apiErr.ErrorCode())
 }
 
 // logRetry writes the WARN record before retry number attempt (from 1). A retry
@@ -198,7 +214,7 @@ func (store *Store) getChunkWithRetries(ctx context.Context, keys []map[string]t
 			RequestItems: requestItems,
 		})
 		if err != nil {
-			return fmt.Errorf("batch get item: %w", err)
+			return fmt.Errorf("batch get item: %w", safeAPIError(err))
 		}
 		for _, item := range output.Responses[store.table] {
 			if sk, ok := item["SK"].(*types.AttributeValueMemberS); ok {

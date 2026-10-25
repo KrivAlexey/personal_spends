@@ -3,6 +3,7 @@ package categorizer
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -94,7 +95,7 @@ func (claude *Claude) Categorize(
 		Tools:     tools,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("categorizer: create message: %w", err)
+		return nil, fmt.Errorf("categorizer: create message: %w", safeAPIError(err))
 	}
 	// Logged before validation, so a max_tokens answer that fails it still
 	// shows its stop_reason (#65).
@@ -106,6 +107,17 @@ func (claude *Claude) Categorize(
 		"stop_reason", string(message.StopReason))
 
 	return unpackCategorizeBatch(message, transactions)
+}
+
+// safeAPIError replaces an API error, whose text carries the raw response body
+// that could echo the prompt, with its status, error type and request ID
+// (ADR 0013). Other errors, e.g. context cancellation, pass through.
+func safeAPIError(err error) error {
+	apiErr, ok := errors.AsType[*anthropic.Error](err)
+	if !ok {
+		return err
+	}
+	return fmt.Errorf("status %d, type %s, request-id %s", apiErr.StatusCode, apiErr.Type(), apiErr.RequestID)
 }
 
 func unpackCategorizeBatch(message *anthropic.Message, transactions []Transaction) ([]CategorizedTransaction, error) {

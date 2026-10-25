@@ -27,11 +27,11 @@
 - [x] 3.5 Claude: time `Messages.New`, write the batch DEBUG record before `unpackCategorizeBatch`, none when `Messages.New` fails
 - [x] 3.6 Store: WARN on each retry in batch write and batch get, and drop `%v` of `Expense` from error messages (name the expense by date and batch position, not ID)
 - [x] 3.7 Parser: column-parse failures return `*ParseError{Column, Row}`, whose message drops the raw value and which doesn't wrap the `strconv`/`time` error
-- [ ] 3.8 Merge gate: confirm from the Anthropic SDK and AWS SDK (DynamoDB) sources that their error text can't echo request content: prompt or item values, the 4xx response body, the request URL and method. Record the result in the PR. If one can, strip the echoed part where the error enters our code before the PR merges
-- [ ] 3.9 `go build ./... && go vet ./... && go test ./...` passes
+- [x] 3.8 Merge gate: confirm from the Anthropic SDK and AWS SDK (DynamoDB) sources that their error text can't echo request content: prompt or item values, the 4xx response body, the request URL and method. Record the result in the PR. If one can, strip the echoed part where the error enters our code before the PR merges
+- [x] 3.9 `go build ./... && go vet ./... && go test ./...` passes
 
 ## 4. Docs and ship
 
-- [ ] 4.1 `docs/architecture.md`: `LOG_LEVEL`/`LOG_FORMAT` in Configuration, a short Logging section, and `internal/logging` in Implementation Status. Remove "logging of 500s (#88)" from the handler's "Not yet"
+- [x] 4.1 `docs/architecture.md`: `LOG_LEVEL`/`LOG_FORMAT` in Configuration, a short Logging section, and `internal/logging` in Implementation Status. Remove "logging of 500s (#88)" from the handler's "Not yet"
 - [ ] 4.2 Open the PR for #88 (`Closes #88`), `ci` green
 - [ ] 4.3 Archive this change once merged
