@@ -17,7 +17,8 @@ This document describes the v1 target. What is built so far:
 | `internal/parser` | Built: `Parser.ParseCSV` (pending filter, transaction IDs) + `FileMappingProvider`, tested |
 | `internal/storage` | Built: `PutExpense`, `SaveExpenses` (batched, retried), `KnownIDs`, tested. Not yet: `QueryExpenses` |
 | `internal/ingest` | Built: `Importer.Import` (serial loop, skips known rows), tested with fakes |
-| `internal/handler` | Built: `POST /uploads/csv` ([0012](decisions/0012-raw-csv-upload-body.md)), tested with a fake importer. Not yet: other endpoints, `X-API-Key` middleware, logging of 500s (#88) |
+| `internal/handler` | Built: `POST /uploads/csv` ([0012](decisions/0012-raw-csv-upload-body.md)), request ID + access log + panic recovery middleware, tested with a fake importer. Not yet: other endpoints, `X-API-Key` middleware |
+| `internal/logging` | Built: `New` (level/format), context attributes (`request_id`, `batch`, `batches`), tested ([0013](decisions/0013-structured-logging-with-slog.md)) |
 | `internal/mcp`, `cmd/*` | Not started |
 | Terraform | DynamoDB table with GSI1 only. Not yet: Lambda, API Gateway |
 | Configuration (below) | Not read anywhere yet; arrives with `cmd/` |
@@ -151,6 +152,8 @@ its own method when the S3 bucket and the Claude Vision call are built together
 — an interface method with no implementation stops every implementation from
 satisfying the interface ([0009](decisions/0009-csv-only-v1.md)).
 
+Every `Categorizer` writes one DEBUG record per batch (`size`, `duration_ms`, `input_tokens`, `output_tokens`, `stop_reason`; `0`/`none` for an implementation that calls no model), specified in [`openspec/specs/categorizer`](../openspec/specs/categorizer/spec.md). Its tests call `categorizertest.AssertBatchLogging`.
+
 ---
 
 ## Data Model
@@ -258,6 +261,21 @@ collect from results chan ──► storage.SaveExpenses()
 | `AWS_REGION` | AWS region | `eu-central-1` |
 | `BATCH_SIZE` | Transactions per Claude API call | `50` |
 | `WORKER_POOL_SIZE` | Max concurrent categorizer goroutines (step 2) | `5` |
+| `LOG_LEVEL` | `debug`, `info`, `warn` or `error` (case-insensitive) | `info` |
+| `LOG_FORMAT` | `text` or `json` (`json` on Lambda, for CloudWatch) | `text` |
+
+---
+
+## Logging
+
+`log/slog`, one logger built by `logging.New` and injected into the handler, importer, categorizer and store ([0013](decisions/0013-structured-logging-with-slog.md)). What is logged is specified in [`openspec/specs/logging`](../openspec/specs/logging/spec.md):
+
+- INFO: one access record per request (`method`, `route`, `status`, `duration_ms`), never the raw path
+- WARN: `400` rejections (fixed `reason`), client disconnects, DynamoDB retries
+- ERROR: `500`s, with the full error chain; handler panics, with the stack
+- DEBUG: parse, dedup, per-batch categorize and save, and the import summary
+
+Every record logged while serving a request carries `request_id`, added from the context by the `logging` handler wrapper together with `batch`/`batches`. Errors are logged once, at the handler. No bank data reaches the logs at any level.
 
 ---
 

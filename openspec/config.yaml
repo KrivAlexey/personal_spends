@@ -7,7 +7,8 @@ context: |
   Structure and backlog: docs/architecture.md. Decisions: docs/decisions/.
 
   OpenSpec is for changes to observable behavior only: REST/MCP contracts, the
-  Categorizer contract, CSV parsing rules. Decisions go in ADRs, structure in
+  Categorizer contract, CSV parsing rules, and operational logging (what the
+  operator can rely on finding in the logs). Decisions go in ADRs, structure in
   docs/architecture.md, not in specs.
 
 rules:

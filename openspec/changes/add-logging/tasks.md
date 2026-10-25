@@ -1,8 +1,8 @@
 ## 1. Decision and scope
 
-- [ ] 1.1 ADR 0013: `log/slog` with an injected logger, context attributes via a handler wrapper, log once at the boundary, no bank data in logs, `LOG_LEVEL`/`LOG_FORMAT`. State explicitly that the `Categorizer` contract changes: every implementation logs one DEBUG record per batch (owner-approved 2026-10-24: https://github.com/KrivAlexey/personal_spends/pull/105#discussion_r4367519063)
-- [ ] 1.2 Widen `openspec/config.yaml` context: OpenSpec also covers operational logging (what the operator can rely on in logs)
-- [ ] 1.3 Note in `docs/architecture.md` (Interfaces) that every `Categorizer` logs one DEBUG record per batch
+- [x] 1.1 ADR 0013: `log/slog` with an injected logger, context attributes via a handler wrapper, log once at the boundary, no bank data in logs, `LOG_LEVEL`/`LOG_FORMAT`. State explicitly that the `Categorizer` contract changes: every implementation logs one DEBUG record per batch (owner-approved 2026-10-24: https://github.com/KrivAlexey/personal_spends/pull/105#discussion_r4367519063)
+- [x] 1.2 Widen `openspec/config.yaml` context: OpenSpec also covers operational logging (what the operator can rely on in logs)
+- [x] 1.3 Note in `docs/architecture.md` (Interfaces) that every `Categorizer` logs one DEBUG record per batch
 
 ## 2. Failing tests (one commit, red for the right reason)
 

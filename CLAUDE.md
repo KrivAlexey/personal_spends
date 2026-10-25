@@ -10,7 +10,7 @@ v1 is the smallest end-to-end path: CSV upload, serial categorization, DynamoDB 
 
 - `docs/architecture.md` — implementation status, system diagram, request flows, interfaces, data model, API, MCP tools, configuration, and the ordered list of later changes (the backlog)
 - `docs/decisions/` — ADRs, one per design decision
-- `openspec/` — behavior specs only: REST/MCP contracts, the `Categorizer` contract, CSV parsing rules. Changes to them go through `/opsx:propose` → apply → archive
+- `openspec/` — behavior specs only: REST/MCP contracts, the `Categorizer` contract, CSV parsing rules, operational logging. Changes to them go through `/opsx:propose` → apply → archive
 
 Read the relevant doc before changing a subsystem; update it in the same PR when the change alters what it says.
 
