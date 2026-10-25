@@ -424,3 +424,51 @@ func TestStore_ErrorsHoldNoBankData(t *testing.T) {
 }
 
 var day = time.Date(2026, 8, 14, 0, 0, 0, 0, time.UTC)
+
+// fakeAPIError mimics smithy.APIError, whose message is server text.
+type fakeAPIError struct{ code, message string }
+
+func (e fakeAPIError) Error() string        { return "api error " + e.code + ": " + e.message }
+func (e fakeAPIError) ErrorCode() string    { return e.code }
+func (e fakeAPIError) ErrorMessage() string { return e.message }
+
+// AWS error messages are server text that could quote item values; only the
+// error code passes through.
+func TestStore_APIErrorDropsMessage(t *testing.T) {
+	apiErr := fakeAPIError{code: "ValidationException", message: "invalid value REWE Markt GmbH"}
+	tests := []struct {
+		name   string
+		client *fakeDynamoClient
+		run    func(*Store) error
+	}{
+		{
+			name:   "put item",
+			client: &fakeDynamoClient{putItemErr: apiErr},
+			run:    func(s *Store) error { return s.PutExpense(context.Background(), Expense{Date: day}) },
+		},
+		{
+			name:   "batch write",
+			client: &fakeDynamoClient{batchWriteErr: apiErr},
+			run:    func(s *Store) error { return s.SaveExpenses(context.Background(), []Expense{{Date: day}}) },
+		},
+		{
+			name:   "batch get",
+			client: &fakeDynamoClient{batchGetErr: apiErr},
+			run: func(s *Store) error {
+				_, err := s.KnownIDs(context.Background(), keysFor(1, day))
+				return err
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.run(newStore(tt.client, "expenses", nil))
+			if err == nil || !strings.Contains(err.Error(), "ValidationException") {
+				t.Fatalf("error = %v, want it to name ValidationException", err)
+			}
+			if strings.Contains(err.Error(), "REWE") || strings.Contains(err.Error(), "invalid value") {
+				t.Errorf("error %q contains the server message", err)
+			}
+		})
+	}
+}

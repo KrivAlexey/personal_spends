@@ -118,3 +118,25 @@ func TestClaude_BatchRecord(t *testing.T) {
 		})
 	}
 }
+
+// The SDK's error text carries the API's raw response body, which could echo
+// the prompt; only the status, error type and request ID may pass through.
+func TestClaude_APIErrorDropsResponseBody(t *testing.T) {
+	claude := fakeAPIWithLogger(t, http.StatusBadRequest,
+		`{"type": "error", "error": {"type": "invalid_request_error", "message": "bad value: REWE Markt GmbH -23.45"}}`, nil)
+
+	_, err := claude.Categorize(t.Context(), batch)
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	for _, want := range []string{"categorizer: create message", "400", "invalid_request_error"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q lacks %q", err, want)
+		}
+	}
+	for _, v := range []string{"REWE", "23.45", "bad value"} {
+		if strings.Contains(err.Error(), v) {
+			t.Errorf("error %q contains response text %q", err, v)
+		}
+	}
+}
