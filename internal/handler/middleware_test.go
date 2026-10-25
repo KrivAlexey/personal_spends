@@ -130,11 +130,17 @@ func panicServer(t *testing.T, imp importer) (*httptest.Server, *logtest.Buffer)
 	mux.HandleFunc("POST /uploads/csv", h.uploadCSV)
 	mux.HandleFunc("GET /after-write", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("partial"))
-		_ = http.NewResponseController(w).Flush()
+		if err := http.NewResponseController(w).Flush(); err != nil {
+			t.Errorf("Flush: %v", err)
+		}
 		panic("boom REWE")
 	})
 	mux.HandleFunc("GET /abort", func(http.ResponseWriter, *http.Request) {
 		panic(http.ErrAbortHandler)
+	})
+	mux.HandleFunc("GET /early-hints", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusEarlyHints)
+		panic("boom REWE")
 	})
 	srv := httptest.NewServer(h.withLogging(mux))
 	t.Cleanup(srv.Close)
@@ -176,9 +182,13 @@ func TestPanic_AfterResponseStarted(t *testing.T) {
 	srv, buf := panicServer(t, &fakeImporter{})
 
 	resp, err := http.Get(srv.URL + "/after-write")
-	if err == nil {
-		_, err = io.ReadAll(resp.Body)
-		resp.Body.Close()
+	if err != nil {
+		t.Fatalf("GET: %v; want the 200 and part of the body before the connection closes", err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || string(body) != "partial" {
+		t.Errorf("response = %d %q, want 200 with the partial body", resp.StatusCode, body)
 	}
 	if err == nil {
 		t.Error("response completed; want the connection closed mid-response")
@@ -206,4 +216,20 @@ func TestPanic_DeliberateAbort(t *testing.T) {
 		t.Errorf("got %d ERROR records, want none:\n%s", n, buf)
 	}
 	assertFields(t, accessRecord(t, recs), map[string]any{"route": "GET /abort", "status": 0.0})
+}
+
+// A 1xx is informational: the response hasn't started, so a panic still gets
+// a 500.
+func TestPanic_AfterInformationalResponse(t *testing.T) {
+	srv, buf := panicServer(t, &fakeImporter{})
+
+	resp, err := http.Get(srv.URL + "/early-hints")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", resp.StatusCode)
+	}
+	assertFields(t, accessRecord(t, logtest.Records(t, buf)), map[string]any{"status": 500.0})
 }

@@ -19,7 +19,7 @@ import (
 // DEBUG record with size, duration_ms, input_tokens, output_tokens and
 // stop_reason, carry request_id/batch/batches from the context, and log none of
 // the batch's merchants, descriptions or amounts. Give batch distinctive values
-// (amounts like -23.45, not -1) so the bank-data check can't match a timestamp.
+// (amounts like -23.45, not -1) so the bank-data check can't match a count.
 func AssertBatchLogging(t *testing.T, build func(*slog.Logger) categorizer.Categorizer, batch []categorizer.Transaction) {
 	t.Helper()
 	logger, buf := logtest.NewLogger(slog.LevelDebug)

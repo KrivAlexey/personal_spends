@@ -41,11 +41,19 @@ func (r Record) Level() string { s, _ := r["level"].(string); return s }
 func (r Record) Msg() string { s, _ := r["msg"].(string); return s }
 
 // NewLogger returns a JSON logger at level into a new Buffer, with the
-// context-attribute handler the service uses.
+// context-attribute handler the service uses. Records have no time field, so
+// a bank-data check for "23.45" can't match a timestamp like ":23.451".
 func NewLogger(level slog.Level) (*slog.Logger, *Buffer) {
 	buf := &Buffer{}
-	h := slog.NewJSONHandler(buf, &slog.HandlerOptions{Level: level})
+	h := slog.NewJSONHandler(buf, &slog.HandlerOptions{Level: level, ReplaceAttr: dropTime})
 	return slog.New(logging.NewHandler(h)), buf
+}
+
+func dropTime(groups []string, a slog.Attr) slog.Attr {
+	if len(groups) == 0 && a.Key == slog.TimeKey {
+		return slog.Attr{}
+	}
+	return a
 }
 
 // Records decodes every line of buf as a JSON record.

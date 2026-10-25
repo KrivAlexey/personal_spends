@@ -343,3 +343,22 @@ func TestParseCSV_ReadErrorIsNotParseError(t *testing.T) {
 		t.Errorf("read error %v is a *ParseError", err)
 	}
 }
+
+type failingProvider struct{}
+
+func (failingProvider) GetMapping(context.Context, string) (BankMapping, error) {
+	return BankMapping{}, io.ErrUnexpectedEOF
+}
+
+// The bank value comes from the caller, so it stays out of the error text the
+// handler logs.
+func TestParseCSV_MappingErrorOmitsBank(t *testing.T) {
+	bank := strings.Repeat("b", 1000)
+	_, err := NewParser(failingProvider{}).ParseCSV(context.Background(), bank, strings.NewReader(""))
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("error = %v, want %v", err, io.ErrUnexpectedEOF)
+	}
+	if strings.Contains(err.Error(), bank) {
+		t.Errorf("error contains the caller's bank value: %.80q…", err)
+	}
+}

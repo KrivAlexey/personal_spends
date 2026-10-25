@@ -28,6 +28,7 @@ func TestNew(t *testing.T) {
 		{name: "warn hides info", level: "warn", format: "text"},
 		{name: "error hides info", level: "Error", format: "json", wantJSON: true},
 		{name: "invalid level", level: "verbose", wantErr: []string{"LOG_LEVEL", "verbose"}},
+		{name: "level offset", level: "info+4", wantErr: []string{"LOG_LEVEL", "info+4"}},
 		{name: "invalid format", format: "xml", wantErr: []string{"LOG_FORMAT", "xml"}},
 	}
 	for _, tt := range tests {

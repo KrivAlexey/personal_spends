@@ -357,7 +357,7 @@ func TestUploadCSV_RejectionRecord(t *testing.T) {
 		},
 		{
 			name: "oversized multi-byte bank", target: bankTarget(strings.Repeat("ä", 100)), body: strings.NewReader(csvBody), err: notFound,
-			wantBank: strings.Repeat("ä", 64) + "…", wantReason: "bank mapping not found", lacks: []string{"�", strings.Repeat("ä", 65)},
+			wantBank: strings.Repeat("ä", 64) + "…", wantReason: "bank mapping not found", lacks: []string{"\uFFFD", `\ufffd`, strings.Repeat("ä", 65)},
 		},
 	}
 	for _, tt := range tests {
