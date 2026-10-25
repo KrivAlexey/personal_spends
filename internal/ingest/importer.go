@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"slices"
 	"time"
 
@@ -39,16 +40,21 @@ type Importer struct {
 	categorizer categorizer.Categorizer
 	store       expenseStore
 	batchSize   int
+	logger      *slog.Logger
 	now         func() time.Time
 }
 
 // NewImporter returns an Importer that categorizes batchSize transactions per
-// call; a non-positive batchSize means DefaultBatchSize.
-func NewImporter(p csvParser, c categorizer.Categorizer, s expenseStore, batchSize int) *Importer {
+// call; a non-positive batchSize means DefaultBatchSize. A nil logger
+// discards.
+func NewImporter(p csvParser, c categorizer.Categorizer, s expenseStore, batchSize int, logger *slog.Logger) *Importer {
 	if batchSize <= 0 {
 		batchSize = DefaultBatchSize
 	}
-	return &Importer{parser: p, categorizer: c, store: s, batchSize: batchSize, now: time.Now}
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
+	}
+	return &Importer{parser: p, categorizer: c, store: s, batchSize: batchSize, logger: logger, now: time.Now}
 }
 
 // Import stores the export's booked transactions that aren't stored yet.

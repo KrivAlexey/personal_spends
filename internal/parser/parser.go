@@ -185,3 +185,14 @@ func parseAmount(value string, decimalSeparator string) (float64, error) {
 	}
 	return strconv.ParseFloat(value, 64)
 }
+
+// ParseError reports a cell that couldn't be parsed. It names the column and
+// row but never the cell's value, which is bank data (ADR 0013).
+type ParseError struct {
+	Column string
+	Row    int // 1-based data row, the header not counted
+}
+
+func (e *ParseError) Error() string {
+	return fmt.Sprintf("parsing column %q in row %d", e.Column, e.Row)
+}

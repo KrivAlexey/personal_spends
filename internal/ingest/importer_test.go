@@ -5,11 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/KrivAlexey/personal_spends/internal/categorizer"
+	"github.com/KrivAlexey/personal_spends/internal/categorizer/categorizertest"
+	"github.com/KrivAlexey/personal_spends/internal/logging/logtest"
 	"github.com/KrivAlexey/personal_spends/internal/parser"
 	"github.com/KrivAlexey/personal_spends/internal/storage"
 )
@@ -25,13 +28,20 @@ func (f *fakeParser) ParseCSV(context.Context, string, io.Reader) (parser.ParseR
 
 type fakeCategorizer struct {
 	batches   [][]categorizer.Transaction
-	failBatch int // 1-based batch that fails; 0 = never
+	failBatch int          // 1-based batch that fails; 0 = never
+	logger    *slog.Logger // nil = discard
 }
 
-func (f *fakeCategorizer) Categorize(_ context.Context, batch []categorizer.Transaction) ([]categorizer.CategorizedTransaction, error) {
+// Categorize meets the Categorizer contract's batch record, with 0 tokens and
+// stop_reason none because it calls no model.
+func (f *fakeCategorizer) Categorize(ctx context.Context, batch []categorizer.Transaction) ([]categorizer.CategorizedTransaction, error) {
 	f.batches = append(f.batches, batch)
 	if len(f.batches) == f.failBatch {
 		return nil, errCategorize
+	}
+	if f.logger != nil {
+		f.logger.DebugContext(ctx, "categorize batch", "size", len(batch), "duration_ms", 0,
+			"input_tokens", 0, "output_tokens", 0, "stop_reason", "none")
 	}
 	out := make([]categorizer.CategorizedTransaction, len(batch))
 	for i, tx := range batch {
@@ -210,7 +220,7 @@ func TestImporter_Import(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cat := &fakeCategorizer{failBatch: tt.failBatch}
 			store := &fakeStore{known: tt.known, knownErr: tt.knownErr, saveErr: tt.saveErr}
-			im := NewImporter(&fakeParser{res: tt.parsed, err: tt.parseErr}, cat, store, tt.batchSize)
+			im := NewImporter(&fakeParser{res: tt.parsed, err: tt.parseErr}, cat, store, tt.batchSize, nil)
 
 			got, err := im.Import(context.Background(), "sparkasse", strings.NewReader(""))
 
@@ -232,7 +242,7 @@ func TestImporter_Import(t *testing.T) {
 
 func TestImporter_LooksUpEveryParsedRow(t *testing.T) {
 	store := &fakeStore{}
-	im := NewImporter(&fakeParser{res: parser.ParseResult{Transactions: txs("a", "b")}}, &fakeCategorizer{}, store, 50)
+	im := NewImporter(&fakeParser{res: parser.ParseResult{Transactions: txs("a", "b")}}, &fakeCategorizer{}, store, 50, nil)
 
 	if _, err := im.Import(context.Background(), "sparkasse", strings.NewReader("")); err != nil {
 		t.Fatalf("Import: %v", err)
@@ -245,7 +255,7 @@ func TestImporter_LooksUpEveryParsedRow(t *testing.T) {
 
 func TestImporter_ExpenseMapping(t *testing.T) {
 	store := &fakeStore{}
-	im := NewImporter(&fakeParser{res: parser.ParseResult{Transactions: txs("a")}}, &fakeCategorizer{}, store, 50)
+	im := NewImporter(&fakeParser{res: parser.ParseResult{Transactions: txs("a")}}, &fakeCategorizer{}, store, 50, nil)
 	im.now = func() time.Time { return fixedNow }
 
 	if _, err := im.Import(context.Background(), "sparkasse", strings.NewReader("")); err != nil {
@@ -269,5 +279,95 @@ func TestImporter_ExpenseMapping(t *testing.T) {
 	}
 	if got := store.saved[0][0]; got != want {
 		t.Errorf("expense = %+v\nwant      %+v", got, want)
+	}
+}
+
+func TestFakeCategorizer_BatchLoggingContract(t *testing.T) {
+	categorizertest.AssertBatchLogging(t, func(logger *slog.Logger) categorizer.Categorizer {
+		return &fakeCategorizer{logger: logger}
+	}, []categorizer.Transaction{{ID: "a", Date: day, Amount: -23.45, Merchant: "REWE Markt GmbH", Currency: "EUR", Description: "Kartenzahlung 12.03"}})
+}
+
+func TestImporter_DebugRecords(t *testing.T) {
+	ids := manyIDs(62)
+	tests := []struct {
+		name   string
+		level  slog.Level
+		known  map[string]bool
+		want   []string               // messages of the importer's and categorizer's records, in order
+		fields map[int]map[string]any // index into want -> fields the record must carry
+	}{
+		{
+			name:  "two batches",
+			level: slog.LevelDebug,
+			known: map[string]bool{ids[0]: true, ids[1]: true},
+			want:  []string{"parsed export", "deduplicated", "categorize batch", "saved batch", "categorize batch", "saved batch", "import done"},
+			fields: map[int]map[string]any{
+				0: {"bank": "sparkasse", "rows": 62.0, "pending_skipped": 3.0},
+				1: {"already_known": 2.0, "fresh": 60.0},
+				2: {"batch": 1.0, "batches": 2.0, "size": 50.0},
+				3: {"batch": 1.0, "saved": 50.0},
+				4: {"batch": 2.0, "batches": 2.0, "size": 10.0},
+				5: {"batch": 2.0, "saved": 10.0},
+				6: {"imported": 60.0, "already_known": 2.0, "pending_skipped": 3.0},
+			},
+		},
+		{
+			name:  "nothing new",
+			level: slog.LevelDebug,
+			known: func() map[string]bool {
+				m := map[string]bool{}
+				for _, id := range ids {
+					m[id] = true
+				}
+				return m
+			}(),
+			want: []string{"parsed export", "deduplicated", "import done"},
+			fields: map[int]map[string]any{
+				1: {"already_known": 62.0, "fresh": 0.0},
+				2: {"imported": 0.0},
+			},
+		},
+		{
+			name:  "info level stays quiet",
+			level: slog.LevelInfo,
+			want:  nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logger, buf := logtest.NewLogger(tt.level)
+			im := NewImporter(&fakeParser{res: parser.ParseResult{Transactions: txs(ids...), PendingSkipped: 3}},
+				&fakeCategorizer{logger: logger}, &fakeStore{known: tt.known}, 50, logger)
+
+			if _, err := im.Import(context.Background(), "sparkasse", strings.NewReader("")); err != nil {
+				t.Fatalf("Import: %v", err)
+			}
+
+			recs := logtest.Records(t, buf)
+			var msgs []string
+			for _, r := range recs {
+				if r.Level() != "DEBUG" {
+					t.Errorf("record at %s, want DEBUG only: %v", r.Level(), r)
+				}
+				msgs = append(msgs, r.Msg())
+			}
+			if fmt.Sprint(msgs) != fmt.Sprint(tt.want) {
+				t.Fatalf("messages = %v, want %v\n%s", msgs, tt.want, buf)
+			}
+			for i, fields := range tt.fields {
+				for k, want := range fields {
+					if recs[i][k] != want {
+						t.Errorf("%q: %s = %v, want %v", msgs[i], k, recs[i][k], want)
+					}
+				}
+			}
+			if n := len(recs); n > 0 && tt.want[n-1] == "import done" {
+				if d, ok := recs[n-1]["duration_ms"].(float64); !ok || d < 0 {
+					t.Errorf("summary duration_ms = %v, want non-negative", recs[n-1]["duration_ms"])
+				}
+			}
+			logtest.AssertLacks(t, buf, "M id00", "D id00")
+		})
 	}
 }

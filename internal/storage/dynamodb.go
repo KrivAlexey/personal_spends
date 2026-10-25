@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"slices"
 	"time"
 
@@ -71,13 +72,20 @@ func (store *Store) KnownIDs(ctx context.Context, keys []ExpenseKey) (map[string
 type Store struct {
 	client dynamoDBAPI
 	table  string
+	logger *slog.Logger
 }
 
-func NewStore(client *dynamodb.Client, table string) *Store {
-	return &Store{
-		client: client,
-		table:  table,
+// NewStore returns a Store on table that logs retries to logger; a nil logger
+// discards.
+func NewStore(client *dynamodb.Client, table string, logger *slog.Logger) *Store {
+	return newStore(client, table, logger)
+}
+
+func newStore(client dynamoDBAPI, table string, logger *slog.Logger) *Store {
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
 	}
+	return &Store{client: client, table: table, logger: logger}
 }
 
 func (store *Store) PutExpense(ctx context.Context, expense Expense) error {

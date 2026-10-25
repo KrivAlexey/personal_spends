@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -22,17 +23,22 @@ type ClaudeTransaction struct {
 type Claude struct {
 	client     anthropic.Client
 	categories []string
+	logger     *slog.Logger
 }
 
 var _ Categorizer = (*Claude)(nil)
 
-func NewClaude(apiKey string, categoriies []string) *Claude {
-	claude := &Claude{
-		client:     anthropic.NewClient(option.WithAPIKey(apiKey)),
-		categories: categoriies,
+// NewClaude returns a Claude categorizer that logs to logger (nil discards).
+// opts are applied after the API key, e.g. option.WithBaseURL in tests.
+func NewClaude(apiKey string, categories []string, logger *slog.Logger, opts ...option.RequestOption) *Claude {
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
 	}
-
-	return claude
+	return &Claude{
+		client:     anthropic.NewClient(append([]option.RequestOption{option.WithAPIKey(apiKey)}, opts...)...),
+		categories: categories,
+		logger:     logger,
+	}
 }
 
 func marshalBatch(batch []Transaction) (string, error) {

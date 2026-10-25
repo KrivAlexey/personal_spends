@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 
 	"github.com/KrivAlexey/personal_spends/internal/ingest"
@@ -27,19 +28,28 @@ type importer interface {
 
 // Handler serves the REST API.
 type Handler struct {
-	imp importer
+	imp    importer
+	logger *slog.Logger
 }
 
-// New returns a Handler that imports uploads with imp.
-func New(imp importer) *Handler {
-	return &Handler{imp: imp}
+// New returns a Handler that imports uploads with imp and logs to logger; a
+// nil logger discards.
+func New(imp importer, logger *slog.Logger) *Handler {
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
+	}
+	return &Handler{imp: imp, logger: logger}
 }
 
 // Routes returns the API's router.
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /uploads/csv", h.uploadCSV)
-	return mux
+	return h.withLogging(mux)
+}
+
+func (h *Handler) withLogging(next http.Handler) http.Handler {
+	return next
 }
 
 // uploadCSV imports the export sent as the raw request body; the query

@@ -2,6 +2,8 @@ package parser
 
 import (
 	"context"
+	"errors"
+	"io"
 	"maps"
 	"regexp"
 	"strings"
@@ -288,5 +290,56 @@ func TestParseCSV_Encoding(t *testing.T) {
 				t.Errorf("Description = %q, want %q", got, want)
 			}
 		})
+	}
+}
+
+// A malformed cell is a *ParseError naming the column and row, never the raw
+// value, because the error chain gets logged.
+func TestParseCSV_ParseError(t *testing.T) {
+	sparkasse := committedSparkasse(t)
+	tests := []struct {
+		name       string
+		bad        map[string]string
+		wantColumn string
+		lacks      []string
+	}{
+		{name: "malformed amount", bad: map[string]string{"Betrag": "-12,3x"}, wantColumn: "Amount", lacks: []string{"12,3x", "12.3x"}},
+		{name: "malformed date", bad: map[string]string{"Buchungstag": "31.13.26"}, wantColumn: "Date", lacks: []string{"31.13.26"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := parse(t, sparkasse, csvOf(sparkasseHeader, bookedRow(), with(bookedRow(), tt.bad)))
+
+			pe, ok := errors.AsType[*ParseError](err)
+			if !ok {
+				t.Fatalf("error %v is not a *ParseError", err)
+			}
+			if pe.Column != tt.wantColumn || pe.Row != 2 {
+				t.Errorf("ParseError = %+v, want column %q row 2", pe, tt.wantColumn)
+			}
+			for _, v := range tt.lacks {
+				if strings.Contains(err.Error(), v) {
+					t.Errorf("error %q contains the raw value %q", err, v)
+				}
+			}
+		})
+	}
+}
+
+type failingReader struct{}
+
+func (failingReader) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
+
+func TestParseCSV_ReadErrorIsNotParseError(t *testing.T) {
+	sparkasse := committedSparkasse(t)
+	header := csvOf(sparkasseHeader)
+	p := NewParser(staticProvider{sparkasse.BankName: sparkasse})
+
+	_, err := p.ParseCSV(context.Background(), sparkasse.BankName, io.MultiReader(strings.NewReader(header), failingReader{}))
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if _, ok := errors.AsType[*ParseError](err); ok {
+		t.Errorf("read error %v is a *ParseError", err)
 	}
 }

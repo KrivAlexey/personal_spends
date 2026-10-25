@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/KrivAlexey/personal_spends/internal/logging/logtest"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
@@ -80,7 +83,7 @@ func TestStore_PutExpense(t *testing.T) {
 
 	t.Run("success", func(t *testing.T) {
 		client := &fakeDynamoClient{}
-		store := &Store{client: client, table: "expenses"}
+		store := newStore(client, "expenses", nil)
 
 		if err := store.PutExpense(context.Background(), expense); err != nil {
 			t.Fatalf("PutExpense() error = %v", err)
@@ -90,7 +93,7 @@ func TestStore_PutExpense(t *testing.T) {
 	t.Run("client error", func(t *testing.T) {
 		wantErr := errors.New("boom")
 		client := &fakeDynamoClient{putItemErr: wantErr}
-		store := &Store{client: client, table: "expenses"}
+		store := newStore(client, "expenses", nil)
 
 		err := store.PutExpense(context.Background(), expense)
 		if !errors.Is(err, wantErr) {
@@ -101,7 +104,7 @@ func TestStore_PutExpense(t *testing.T) {
 
 func TestStore_SaveExpenses_Empty(t *testing.T) {
 	client := &fakeDynamoClient{}
-	store := &Store{client: client, table: "expenses"}
+	store := newStore(client, "expenses", nil)
 
 	if err := store.SaveExpenses(context.Background(), nil); err != nil {
 		t.Fatalf("SaveExpenses() error = %v", err)
@@ -113,7 +116,7 @@ func TestStore_SaveExpenses_Empty(t *testing.T) {
 
 func TestStore_SaveExpenses_Chunking(t *testing.T) {
 	client := &fakeDynamoClient{}
-	store := &Store{client: client, table: "expenses"}
+	store := newStore(client, "expenses", nil)
 
 	expenses := make([]Expense, MaxBatchItems+5) // forces two chunks
 	for i := range expenses {
@@ -130,7 +133,7 @@ func TestStore_SaveExpenses_Chunking(t *testing.T) {
 
 func TestStore_SaveExpenses_RetriesUnprocessed(t *testing.T) {
 	client := &fakeDynamoClient{unprocessedLeft: 1} // fails once, then succeeds
-	store := &Store{client: client, table: "expenses"}
+	store := newStore(client, "expenses", nil)
 
 	expenses := []Expense{{ID: "1", Date: time.Now(), Category: "Groceries"}}
 
@@ -144,7 +147,7 @@ func TestStore_SaveExpenses_RetriesUnprocessed(t *testing.T) {
 
 func TestStore_SaveExpenses_GivesUpAfterMaxRetries(t *testing.T) {
 	client := &fakeDynamoClient{unprocessedLeft: MaxRetryAttempts + 1} // never clears
-	store := &Store{client: client, table: "expenses"}
+	store := newStore(client, "expenses", nil)
 
 	expenses := []Expense{{ID: "1", Date: time.Now(), Category: "Groceries"}}
 
@@ -159,7 +162,7 @@ func TestStore_SaveExpenses_GivesUpAfterMaxRetries(t *testing.T) {
 
 func TestStore_SaveExpenses_ContextCancelled(t *testing.T) {
 	client := &fakeDynamoClient{unprocessedLeft: MaxRetryAttempts} // always unprocessed, forces the backoff wait
-	store := &Store{client: client, table: "expenses"}
+	store := newStore(client, "expenses", nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -178,7 +181,7 @@ func TestStore_SaveExpenses_ContextCancelled(t *testing.T) {
 func TestStore_SaveExpenses_ClientError(t *testing.T) {
 	wantErr := errors.New("throttled")
 	client := &fakeDynamoClient{batchWriteErr: wantErr}
-	store := &Store{client: client, table: "expenses"}
+	store := newStore(client, "expenses", nil)
 
 	expenses := []Expense{{ID: "1", Date: time.Now(), Category: "Groceries"}}
 
@@ -269,7 +272,7 @@ func TestStore_KnownIDs(t *testing.T) {
 			if tt.cancelled {
 				cancel()
 			}
-			store := &Store{client: tt.client, table: "expenses"}
+			store := newStore(tt.client, "expenses", nil)
 
 			known, err := store.KnownIDs(ctx, tt.keys)
 
@@ -309,3 +312,115 @@ var (
 	errBoom = errors.New("boom")
 	errAny  = errors.New("any error")
 )
+
+func TestStore_RetryWarnings(t *testing.T) {
+	expenses := []Expense{{ID: "a", Date: day}, {ID: "b", Date: day}, {ID: "c", Date: day}}
+	tests := []struct {
+		name      string
+		client    *fakeDynamoClient
+		run       func(*Store) error
+		wantErr   bool
+		operation string
+		attempts  []float64 // attempt of each WARN, in order
+	}{
+		{
+			name:      "batch write retried once",
+			client:    &fakeDynamoClient{unprocessedLeft: 1},
+			run:       func(s *Store) error { return s.SaveExpenses(context.Background(), expenses) },
+			operation: "batch_write",
+			attempts:  []float64{1},
+		},
+		{
+			name:      "batch write gives up: no warning for a retry that never happens",
+			client:    &fakeDynamoClient{unprocessedLeft: MaxRetryAttempts + 1},
+			run:       func(s *Store) error { return s.SaveExpenses(context.Background(), expenses) },
+			wantErr:   true,
+			operation: "batch_write",
+			attempts:  []float64{1, 2},
+		},
+		{
+			name:   "batch get retried once",
+			client: &fakeDynamoClient{unprocessedGetLeft: 1},
+			run: func(s *Store) error {
+				_, err := s.KnownIDs(context.Background(), keysFor(3, day))
+				return err
+			},
+			operation: "batch_get",
+			attempts:  []float64{1},
+		},
+		{
+			name:   "no retry, no warning",
+			client: &fakeDynamoClient{},
+			run:    func(s *Store) error { return s.SaveExpenses(context.Background(), expenses) },
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logger, buf := logtest.NewLogger(slog.LevelDebug)
+			err := tt.run(newStore(tt.client, "expenses", logger))
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("error = %v, want error %v", err, tt.wantErr)
+			}
+
+			recs := logtest.Records(t, buf)
+			if len(recs) != len(tt.attempts) {
+				t.Fatalf("got %d records, want %d WARN:\n%s", len(recs), len(tt.attempts), buf)
+			}
+			for i, r := range recs {
+				if r.Level() != "WARN" {
+					t.Errorf("level = %s, want WARN", r.Level())
+				}
+				for k, want := range map[string]any{"operation": tt.operation, "attempt": tt.attempts[i], "unprocessed": 3.0} {
+					if r[k] != want {
+						t.Errorf("record %d: %s = %v, want %v", i, k, r[k], want)
+					}
+				}
+			}
+		})
+	}
+}
+
+// Error chains are logged at the boundary, so they must hold no bank data.
+func TestStore_ErrorsHoldNoBankData(t *testing.T) {
+	expense := Expense{
+		ID: "3f2a9c1b7d4e8f60-0", Date: day, Amount: -23.45, Currency: "EUR",
+		Merchant: "REWE Markt GmbH", RawDescription: "Kartenzahlung 12.03", Category: "groceries",
+	}
+	tests := []struct {
+		name     string
+		client   *fakeDynamoClient
+		run      func(*Store) error
+		wantDate bool
+	}{
+		{
+			name:     "put item",
+			client:   &fakeDynamoClient{putItemErr: errors.New("boom")},
+			run:      func(s *Store) error { return s.PutExpense(context.Background(), expense) },
+			wantDate: true,
+		},
+		{
+			name:   "batch write",
+			client: &fakeDynamoClient{batchWriteErr: errors.New("boom")},
+			run:    func(s *Store) error { return s.SaveExpenses(context.Background(), []Expense{expense}) },
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.run(newStore(tt.client, "expenses", nil))
+			if err == nil {
+				t.Fatal("expected an error")
+			}
+			msg := strings.ToLower(err.Error())
+			for _, v := range []string{"rewe", "kartenzahlung", "23.45", "23,45", expense.ID, "3f2a9c1b7d4e8f60"} {
+				if strings.Contains(msg, v) {
+					t.Errorf("error %q contains %q", err, v)
+				}
+			}
+			if tt.wantDate && !strings.Contains(msg, "2026-08-14") {
+				t.Errorf("error %q does not name the expense's date", err)
+			}
+		})
+	}
+}
+
+var day = time.Date(2026, 8, 14, 0, 0, 0, 0, time.UTC)
