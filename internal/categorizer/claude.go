@@ -3,7 +3,9 @@ package categorizer
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -22,17 +24,22 @@ type ClaudeTransaction struct {
 type Claude struct {
 	client     anthropic.Client
 	categories []string
+	logger     *slog.Logger
 }
 
 var _ Categorizer = (*Claude)(nil)
 
-func NewClaude(apiKey string, categoriies []string) *Claude {
-	claude := &Claude{
-		client:     anthropic.NewClient(option.WithAPIKey(apiKey)),
-		categories: categoriies,
+// NewClaude returns a Claude categorizer that logs to logger (nil discards).
+// opts are applied after the API key, e.g. option.WithBaseURL in tests.
+func NewClaude(apiKey string, categories []string, logger *slog.Logger, opts ...option.RequestOption) *Claude {
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
 	}
-
-	return claude
+	return &Claude{
+		client:     anthropic.NewClient(append([]option.RequestOption{option.WithAPIKey(apiKey)}, opts...)...),
+		categories: categories,
+		logger:     logger,
+	}
 }
 
 func marshalBatch(batch []Transaction) (string, error) {
@@ -80,6 +87,7 @@ func (claude *Claude) Categorize(
 	tools := make([]anthropic.ToolUnionParam, 1)
 	tools[0] = anthropic.ToolUnionParam{OfTool: &toolParam}
 
+	start := time.Now()
 	message, err := claude.client.Messages.New(ctx, anthropic.MessageNewParams{
 		Model:     anthropic.ModelClaudeHaiku4_5_20251001,
 		MaxTokens: 1024,
@@ -87,10 +95,29 @@ func (claude *Claude) Categorize(
 		Tools:     tools,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("categorizer: create message: %w", err)
+		return nil, fmt.Errorf("categorizer: create message: %w", safeAPIError(err))
 	}
+	// Logged before validation, so a max_tokens answer that fails it still
+	// shows its stop_reason (#65).
+	claude.logger.DebugContext(ctx, "categorize batch",
+		"size", len(transactions),
+		"duration_ms", time.Since(start).Milliseconds(),
+		"input_tokens", message.Usage.InputTokens,
+		"output_tokens", message.Usage.OutputTokens,
+		"stop_reason", string(message.StopReason))
 
 	return unpackCategorizeBatch(message, transactions)
+}
+
+// safeAPIError replaces an API error, whose text carries the raw response body
+// that could echo the prompt, with its status, error type and request ID
+// (ADR 0013). Other errors, e.g. context cancellation, pass through.
+func safeAPIError(err error) error {
+	apiErr, ok := errors.AsType[*anthropic.Error](err)
+	if !ok {
+		return err
+	}
+	return fmt.Errorf("status %d, type %s, request-id %s", apiErr.StatusCode, apiErr.Type(), apiErr.RequestID)
 }
 
 func unpackCategorizeBatch(message *anthropic.Message, transactions []Transaction) ([]CategorizedTransaction, error) {

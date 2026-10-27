@@ -71,7 +71,7 @@ func TestClaudeCategorizer_CallClaude(t *testing.T) {
 		"groceries", "restaurants", "coffee_shops", "transportation_public", "fuel",
 		"housing_rent", "utilities", "internet_phone", "streaming_subscriptions", "shopping_clothing",
 	}
-	claude := NewClaude(apiKey, categories)
+	claude := NewClaude(apiKey, categories, nil)
 
 	results, err := claude.Categorize(t.Context(), testTransactions)
 	_ = results
@@ -190,7 +190,7 @@ func TestUnpackCategorizeBatch(t *testing.T) {
 // TestClaudeImplementsCategorizer guards the wiring the handler depends on:
 // NewClaude's return value has to be assignable to a Categorizer field.
 func TestClaudeImplementsCategorizer(t *testing.T) {
-	var c Categorizer = NewClaude("test-key", []string{"groceries"})
+	var c Categorizer = NewClaude("test-key", []string{"groceries"}, nil)
 	if c == nil {
 		t.Fatal("NewClaude returned a nil Categorizer")
 	}
@@ -286,14 +286,7 @@ func TestClaudeCategorize(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			claude := &Claude{
-				client: anthropic.NewClient(
-					option.WithAPIKey("test-key"),
-					option.WithBaseURL(srv.URL),
-					option.WithMaxRetries(0),
-				),
-				categories: categories,
-			}
+			claude := NewClaude("test-key", categories, nil, option.WithBaseURL(srv.URL), option.WithMaxRetries(0))
 
 			ctx := t.Context()
 			if tt.cancelCtx {

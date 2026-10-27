@@ -32,7 +32,8 @@ type ParseResult struct {
 func (parser *Parser) ParseCSV(ctx context.Context, bankName string, r io.Reader) (ParseResult, error) {
 	mapping, err := parser.mappingProvider.GetMapping(ctx, bankName)
 	if err != nil {
-		return ParseResult{}, fmt.Errorf("parser: csv schema is not found for bank: %s: %w", bankName, err) // todo detect and save schema for a new Bank
+		// No bankName: it comes from the caller, and the handler logs this error.
+		return ParseResult{}, fmt.Errorf("parser: get bank mapping: %w", err) // todo detect and save schema for a new Bank
 	}
 
 	if mapping.Encoding == "iso-8859-1" {
@@ -124,7 +125,7 @@ func parseRows(ctx context.Context, mapping BankMapping, l layout, r *csv.Reader
 	bankName := mapping.BankName
 	var res ParseResult
 	occurrences := make(map[string]int) // per file: identical rows get -0, -1, …
-	for {
+	for rowNum := 1; ; rowNum++ {
 		if err := ctx.Err(); err != nil {
 			return res, fmt.Errorf("reading csv: %w", err)
 		}
@@ -165,7 +166,8 @@ func parseRows(ctx context.Context, mapping BankMapping, l layout, r *csv.Reader
 				tx.Description = value
 			}
 			if err != nil {
-				return res, fmt.Errorf("parsing column %q: %w", fieldByCol[i], err)
+				// Not wrapped: strconv and time errors quote the cell, which is bank data.
+				return res, &ParseError{Column: fieldByCol[i], Row: rowNum}
 			}
 		}
 
@@ -184,4 +186,15 @@ func parseAmount(value string, decimalSeparator string) (float64, error) {
 		value = strings.Replace(value, ",", ".", 1)
 	}
 	return strconv.ParseFloat(value, 64)
+}
+
+// ParseError reports a cell that couldn't be parsed. It names the column and
+// row but never the cell's value, which is bank data (ADR 0013).
+type ParseError struct {
+	Column string
+	Row    int // 1-based data row, the header not counted
+}
+
+func (e *ParseError) Error() string {
+	return fmt.Sprintf("parsing column %q in row %d", e.Column, e.Row)
 }
