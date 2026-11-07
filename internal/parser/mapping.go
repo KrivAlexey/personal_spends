@@ -80,8 +80,27 @@ func (mapping *BankMapping) applyDefaults() error {
 		}
 		seen[col] = true
 	}
+	mapped := make(map[string]bool, len(mapping.Mappings))
+	for col, field := range mapping.Mappings {
+		if !knownFields[field] {
+			return fmt.Errorf("bank %s: column %q maps to unknown field %q, want one of Date, Merchant, Amount, Currency, Description", mapping.BankName, col, field)
+		}
+		if mapped[field] {
+			return fmt.Errorf("bank %s: more than one column maps to %s", mapping.BankName, field)
+		}
+		mapped[field] = true
+	}
+	for _, field := range []string{"Date", "Amount"} {
+		if !mapped[field] {
+			return fmt.Errorf("bank %s: no column maps to %s", mapping.BankName, field)
+		}
+	}
 	return nil
 }
+
+// knownFields are the transaction fields a mapping value can name; parseRows
+// fills exactly these.
+var knownFields = map[string]bool{"Date": true, "Merchant": true, "Amount": true, "Currency": true, "Description": true}
 
 type BankMappingProvider interface {
 	GetMapping(ctx context.Context, bankName string) (BankMapping, error)
@@ -113,6 +132,9 @@ func NewFileMappingProvider(ctx context.Context, filepath string) (*FileMappingP
 	for _, mapping := range allMappings.AllMappings {
 		if err := mapping.applyDefaults(); err != nil {
 			return nil, fmt.Errorf("parsing bank mapping file %s: %w", filepath, err)
+		}
+		if _, dup := mappings[mapping.BankName]; dup {
+			return nil, fmt.Errorf("parsing bank mapping file %s: bank %s is listed twice", filepath, mapping.BankName)
 		}
 		mappings[mapping.BankName] = mapping
 	}
