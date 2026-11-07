@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
+	"slices"
 	"unicode/utf8"
 
 	"go.yaml.in/yaml/v3"
@@ -80,8 +82,28 @@ func (mapping *BankMapping) applyDefaults() error {
 		}
 		seen[col] = true
 	}
+	colByField := make(map[string]string, len(mapping.Mappings))
+	for _, col := range slices.Sorted(maps.Keys(mapping.Mappings)) { // sorted: same error every run
+		field := mapping.Mappings[col]
+		if !knownFields[field] {
+			return fmt.Errorf("bank %s: column %q maps to unknown field %q, want one of Date, Merchant, Amount, Currency, Description", mapping.BankName, col, field)
+		}
+		if prev, ok := colByField[field]; ok {
+			return fmt.Errorf("bank %s: columns %q and %q both map to %s", mapping.BankName, prev, col, field)
+		}
+		colByField[field] = col
+	}
+	for _, field := range []string{"Date", "Amount"} {
+		if _, ok := colByField[field]; !ok {
+			return fmt.Errorf("bank %s: no column maps to %s", mapping.BankName, field)
+		}
+	}
 	return nil
 }
+
+// knownFields are the transaction fields a mapping value can name; parseRows
+// fills exactly these.
+var knownFields = map[string]bool{"Date": true, "Merchant": true, "Amount": true, "Currency": true, "Description": true}
 
 type BankMappingProvider interface {
 	GetMapping(ctx context.Context, bankName string) (BankMapping, error)
@@ -113,6 +135,9 @@ func NewFileMappingProvider(ctx context.Context, filepath string) (*FileMappingP
 	for _, mapping := range allMappings.AllMappings {
 		if err := mapping.applyDefaults(); err != nil {
 			return nil, fmt.Errorf("parsing bank mapping file %s: %w", filepath, err)
+		}
+		if _, dup := mappings[mapping.BankName]; dup {
+			return nil, fmt.Errorf("parsing bank mapping file %s: bank %s is listed twice", filepath, mapping.BankName)
 		}
 		mappings[mapping.BankName] = mapping
 	}

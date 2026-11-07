@@ -239,18 +239,35 @@ func TestParseCSV_MissingColumns(t *testing.T) {
 		return h
 	}
 
+	// renamed maps one more column, absent from every export, to field.
+	renamed := func(col, field string) BankMapping {
+		m := sparkasse
+		m.Mappings = maps.Clone(sparkasse.Mappings)
+		for c, f := range m.Mappings {
+			if f == field {
+				delete(m.Mappings, c)
+			}
+		}
+		m.Mappings[col] = field
+		return m
+	}
+
 	tests := []struct {
-		name   string
-		header []string
-		errHas string
+		name    string
+		mapping BankMapping
+		header  []string
+		errHas  string
 	}{
-		{name: "identity column missing", header: without("Sammlerreferenz"), errHas: "Sammlerreferenz"},
-		{name: "pending column missing", header: without("Info"), errHas: "Info"},
+		{name: "identity column missing", mapping: sparkasse, header: without("Sammlerreferenz"), errHas: "Sammlerreferenz"},
+		{name: "pending column missing", mapping: sparkasse, header: without("Info"), errHas: "Info"},
+		{name: "Date column misspelled in mapping", mapping: renamed("Buchungstg", "Date"), header: sparkasseHeader, errHas: "Buchungstg"},
+		{name: "Description column misspelled in mapping", mapping: renamed("Verwendungszwek", "Description"), header: sparkasseHeader, errHas: "Verwendungszwek"},
+		{name: "empty column name in mapping", mapping: renamed("", "Merchant"), header: sparkasseHeader, errHas: `""`},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := parse(t, sparkasse, csvOf(tt.header, bookedRow()))
+			res, err := parse(t, tt.mapping, csvOf(tt.header, bookedRow()))
 			if err == nil || !strings.Contains(err.Error(), tt.errHas) {
 				t.Fatalf("error = %v, want one naming %q", err, tt.errHas)
 			}
