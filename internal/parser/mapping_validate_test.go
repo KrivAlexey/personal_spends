@@ -11,6 +11,7 @@ func TestBankMapping_ApplyDefaults(t *testing.T) {
 			PendingColumn:   "Info",
 			PendingValue:    "Umsatz vorgemerkt",
 			IdentityColumns: []string{"Account", "Date", "Amount"},
+			Mappings:        map[string]string{"Date": "Date", "Amount": "Amount"},
 		}
 	}
 
@@ -29,6 +30,16 @@ func TestBankMapping_ApplyDefaults(t *testing.T) {
 		{name: "utf-8 encoding", mutate: func(m *BankMapping) { m.Encoding = "utf-8" }},
 		{name: "iso-8859-1 encoding", mutate: func(m *BankMapping) { m.Encoding = "iso-8859-1" }},
 		{name: "unsupported encoding", mutate: func(m *BankMapping) { m.Encoding = "windows-1251" }, wantErr: true},
+		{name: "all five fields mapped", mutate: func(m *BankMapping) {
+			m.Mappings = map[string]string{"D": "Date", "M": "Merchant", "A": "Amount", "C": "Currency", "T": "Description"}
+		}},
+		{name: "lowercase field name", mutate: func(m *BankMapping) { m.Mappings["Datum"] = "date" }, wantErr: true},
+		{name: "unknown field name", mutate: func(m *BankMapping) { m.Mappings["Kategorie"] = "Category" }, wantErr: true},
+		{name: "empty field name", mutate: func(m *BankMapping) { m.Mappings["Info"] = "" }, wantErr: true},
+		{name: "no mappings", mutate: func(m *BankMapping) { m.Mappings = nil }, wantErr: true},
+		{name: "no Date mapping", mutate: func(m *BankMapping) { delete(m.Mappings, "Date") }, wantErr: true},
+		{name: "no Amount mapping", mutate: func(m *BankMapping) { delete(m.Mappings, "Amount") }, wantErr: true},
+		{name: "field mapped twice", mutate: func(m *BankMapping) { m.Mappings["Valuta"] = "Date" }, wantErr: true},
 	}
 
 	for _, tt := range tests {
