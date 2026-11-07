@@ -7,6 +7,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -87,6 +89,12 @@ func newLayout(mapping BankMapping, header []string) (layout, error) {
 	for i, col := range header {
 		colIndex[col] = i
 		fieldByCol[i] = mapping.Mappings[col]
+	}
+
+	for _, col := range slices.Sorted(maps.Keys(mapping.Mappings)) {
+		if _, ok := colIndex[col]; !ok {
+			return layout{}, fmt.Errorf("parser: bank %s: header has no mapped column %q", mapping.BankName, col)
+		}
 	}
 
 	l := layout{fieldByCol: fieldByCol, pendingCol: -1}

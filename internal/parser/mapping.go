@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
+	"slices"
 	"unicode/utf8"
 
 	"go.yaml.in/yaml/v3"
@@ -80,18 +82,19 @@ func (mapping *BankMapping) applyDefaults() error {
 		}
 		seen[col] = true
 	}
-	mapped := make(map[string]bool, len(mapping.Mappings))
-	for col, field := range mapping.Mappings {
+	colByField := make(map[string]string, len(mapping.Mappings))
+	for _, col := range slices.Sorted(maps.Keys(mapping.Mappings)) { // sorted: same error every run
+		field := mapping.Mappings[col]
 		if !knownFields[field] {
 			return fmt.Errorf("bank %s: column %q maps to unknown field %q, want one of Date, Merchant, Amount, Currency, Description", mapping.BankName, col, field)
 		}
-		if mapped[field] {
-			return fmt.Errorf("bank %s: more than one column maps to %s", mapping.BankName, field)
+		if prev, ok := colByField[field]; ok {
+			return fmt.Errorf("bank %s: columns %q and %q both map to %s", mapping.BankName, prev, col, field)
 		}
-		mapped[field] = true
+		colByField[field] = col
 	}
 	for _, field := range []string{"Date", "Amount"} {
-		if !mapped[field] {
+		if _, ok := colByField[field]; !ok {
 			return fmt.Errorf("bank %s: no column maps to %s", mapping.BankName, field)
 		}
 	}
