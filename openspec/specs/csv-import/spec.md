@@ -2,7 +2,9 @@
 
 ## Purpose
 Imports a bank's CSV export into stored expenses so that uploading the same or an overlapping export never stores a transaction twice and never loses a real one.
+
 ## Requirements
+
 ### Requirement: Pending transactions are not imported
 The system SHALL skip every row the bank's mapping marks as pending and SHALL count it in the import result as pending-skipped. If a bank's mapping declares no pending marker, every row SHALL be treated as booked.
 
@@ -83,3 +85,25 @@ The system SHALL decode every export from the character encoding declared in the
 - **WHEN** a bank mapping declares an encoding other than `utf-8` or `iso-8859-1`
 - **THEN** loading the mapping file fails with an error naming the bank
 
+### Requirement: Bank mappings are validated on load
+The system SHALL fail to load the bank mapping file, with an error naming the bank, when a bank's `mappings` contains a field other than `Date`, `Merchant`, `Amount`, `Currency` or `Description`, maps two columns to the same field, or maps no column to `Date` or to `Amount`. Loading SHALL also fail when two mappings share a `bankName`.
+
+#### Scenario: Misspelled field name
+- **WHEN** a bank mapping contains `Datum: date`
+- **THEN** loading the mapping file fails with an error naming the bank
+
+#### Scenario: No date column
+- **WHEN** a bank mapping maps no column to `Date`
+- **THEN** loading the mapping file fails with an error naming the bank
+
+#### Scenario: No amount column
+- **WHEN** a bank mapping maps no column to `Amount`
+- **THEN** loading the mapping file fails with an error naming the bank
+
+#### Scenario: Field mapped twice
+- **WHEN** a bank mapping maps both `Buchungstag` and `Valutadatum` to `Date`
+- **THEN** loading the mapping file fails with an error naming the bank
+
+#### Scenario: Duplicate bank name
+- **WHEN** the mapping file lists `sparkasse` twice
+- **THEN** loading the mapping file fails with an error naming `sparkasse`
