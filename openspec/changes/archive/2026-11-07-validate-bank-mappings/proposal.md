@@ -8,6 +8,7 @@
 - Loading fails when a bank maps no column to `Date` or none to `Amount`.
 - Loading fails when two columns map to the same field.
 - Loading fails when a `bankName` appears twice.
+- An export whose header lacks a column named in `mappings` is rejected, naming the column (a misspelled key like `Buchungstg: Date` otherwise gives the same zero dates). Found in review of #113.
 
 ## Capabilities
 
@@ -15,10 +16,10 @@
 None.
 
 ### Modified Capabilities
-- `csv-import`: adds "Bank mappings are validated on load".
+- `csv-import`: adds "Bank mappings are validated on load" and "Exports must contain the mapped columns".
 
 ## Impact
 
-- `internal/parser/mapping.go` (`applyDefaults`, `NewFileMappingProvider`) and their tests.
+- `internal/parser/mapping.go` (`applyDefaults`, `NewFileMappingProvider`), `internal/parser/parser.go` (`newLayout`) and their tests.
 - The committed `bank_mappings.yaml` already satisfies the new rules.
 - No new dependencies; no core interface changes.

@@ -107,3 +107,10 @@ The system SHALL fail to load the bank mapping file, with an error naming the ba
 #### Scenario: Duplicate bank name
 - **WHEN** the mapping file lists `sparkasse` twice
 - **THEN** loading the mapping file fails with an error naming `sparkasse`
+
+### Requirement: Exports must contain the mapped columns
+The system SHALL reject an export whose header lacks any column named in the bank's `mappings`, with an error naming the missing column, and SHALL store nothing from it.
+
+#### Scenario: Misspelled column in a mapping
+- **WHEN** a bank mapping contains `Buchungstg: Date` and the export's header has `Buchungstag`
+- **THEN** the import fails with an error naming `Buchungstg`, and no expense is stored
