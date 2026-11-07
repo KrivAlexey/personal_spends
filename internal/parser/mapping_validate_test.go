@@ -1,6 +1,9 @@
 package parser
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestBankMapping_ApplyDefaults(t *testing.T) {
 	valid := func() BankMapping {
@@ -19,6 +22,7 @@ func TestBankMapping_ApplyDefaults(t *testing.T) {
 		name    string
 		mutate  func(*BankMapping)
 		wantErr bool
+		errHas  []string
 	}{
 		{name: "valid with pending marker", mutate: func(*BankMapping) {}},
 		{name: "valid without pending marker", mutate: func(m *BankMapping) { m.PendingColumn, m.PendingValue = "", "" }},
@@ -39,7 +43,7 @@ func TestBankMapping_ApplyDefaults(t *testing.T) {
 		{name: "no mappings", mutate: func(m *BankMapping) { m.Mappings = nil }, wantErr: true},
 		{name: "no Date mapping", mutate: func(m *BankMapping) { delete(m.Mappings, "Date") }, wantErr: true},
 		{name: "no Amount mapping", mutate: func(m *BankMapping) { delete(m.Mappings, "Amount") }, wantErr: true},
-		{name: "field mapped twice", mutate: func(m *BankMapping) { m.Mappings["Valuta"] = "Date" }, wantErr: true},
+		{name: "field mapped twice", mutate: func(m *BankMapping) { m.Mappings["Valuta"] = "Date" }, wantErr: true, errHas: []string{`"Date"`, `"Valuta"`, "both map to Date"}},
 	}
 
 	for _, tt := range tests {
@@ -49,6 +53,11 @@ func TestBankMapping_ApplyDefaults(t *testing.T) {
 			err := m.applyDefaults()
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("applyDefaults() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			for _, want := range tt.errHas {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error %q does not contain %s", err, want)
+				}
 			}
 			if err == nil && m.Encoding == "" {
 				t.Errorf("Encoding left empty, want a default")
