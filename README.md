@@ -30,6 +30,16 @@ Personal expense tracking with AI categorization. Upload a bank CSV export; Clau
    ANTHROPIC_API_KEY=sk-ant-...
    ```
 
+## Run locally
+
+```bash
+set -a; . ./.env; set +a     # the server reads env vars, it doesn't load .env itself
+go run ./cmd/server          # from the repo root; serves localhost:8080
+curl -X POST 'localhost:8080/uploads/csv?bank=sparkasse' --data-binary @export.csv
+```
+
+An upload calls Claude and writes to the DynamoDB table (`DYNAMODB_TABLE`, default `personal-spends-expenses`), so it costs money and needs the table from `terraform apply`. Other settings are listed in [`docs/architecture.md`](docs/architecture.md#configuration).
+
 ## Build and test
 
 ```bash

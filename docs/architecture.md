@@ -19,9 +19,10 @@ This document describes the v1 target. What is built so far:
 | `internal/ingest` | Built: `Importer.Import` (serial loop, skips known rows), tested with fakes |
 | `internal/handler` | Built: `POST /uploads/csv` ([0012](decisions/0012-raw-csv-upload-body.md)), request ID + access log + panic recovery middleware, tested with a fake importer. Not yet: other endpoints, `X-API-Key` middleware |
 | `internal/logging` | Built: `New` (level/format), context attributes (`request_id`, `batch`, `batches`), tested ([0013](decisions/0013-structured-logging-with-slog.md)) |
-| `internal/mcp`, `cmd/*` | Not started |
+| `cmd/server` | Built: wires the CSV upload path, serves `localhost:8080`, graceful shutdown on SIGINT/SIGTERM. Checked by running it |
+| `internal/mcp`, `cmd/lambda`, `cmd/mcp` | Not started |
 | Terraform | DynamoDB table with GSI1 only. Not yet: Lambda, API Gateway |
-| Configuration (below) | Not read anywhere yet; arrives with `cmd/` |
+| Configuration (below) | Read by `cmd/server`, except `API_KEY` (no auth middleware yet) and `WORKER_POOL_SIZE` (step 2) |
 
 ---
 
@@ -93,7 +94,7 @@ POST /uploads/csv?bank=<bankName>  (raw CSV body, 0012)
 Re-uploading a file or an overlapping export imports only rows not stored before
 ([0011](decisions/0011-transaction-identity-and-deduplication.md); spec:
 [`openspec/specs/csv-import`](../openspec/specs/csv-import/spec.md)). Everything below
-`Import` is built, and so is the handler calling it; no entry point serves it yet (`cmd/*`).
+`Import` is built, and so is the handler calling it; `cmd/server` serves it locally.
 
 Bank mappings are written by hand and committed to the repo
 (`internal/parser/bank_mappings.yaml`) — one entry per bank, added as a new

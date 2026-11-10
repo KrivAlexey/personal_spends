@@ -19,7 +19,7 @@ Read the relevant doc before changing a subsystem; update it in the same PR when
 Prerequisites: Go 1.26+ (per `go.mod`), AWS CLI configured, Terraform 1.6+, `ANTHROPIC_API_KEY` in `.env`.
 
 ```bash
-go run ./cmd/server        # HTTP server on localhost:8080 (once cmd/server exists)
+go run ./cmd/server        # HTTP server on localhost:8080, run from the repo root
 go build ./... && go vet ./... && go test ./...
 cd terraform && terraform init && terraform plan   # apply only when asked
 ```
