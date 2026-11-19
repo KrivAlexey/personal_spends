@@ -14,7 +14,7 @@ The system SHALL accept `POST /uploads/csv?bank=<bankName>` with the bank export
 - **THEN** the response is `200` with a non-empty `upload_id` and `"imported": 0, "already_known": 1, "pending_skipped": 0`
 
 ### Requirement: Invalid uploads are rejected
-The system SHALL respond `400` and import nothing when the `bank` parameter is missing or empty, when the body is empty or cannot be read, or when no bank mapping exists for `bank`.
+The system SHALL respond `400` and import nothing when the `bank` parameter is missing or empty, when the body is empty or cannot be read, or when no bank mapping exists for `bank`, unless the body repeats a finished upload, which is answered as specified by "Repeated uploads return the original result".
 
 #### Scenario: Missing bank parameter
 - **WHEN** an export is posted to `/uploads/csv` with no `bank` parameter
@@ -39,6 +39,10 @@ The system SHALL respond `400` and import nothing when the `bank` parameter is m
 #### Scenario: Unknown bank
 - **WHEN** an export is posted to `/uploads/csv?bank=nobank` and no mapping named `nobank` exists
 - **THEN** the response is `400` and no expense is stored
+
+#### Scenario: Unknown bank on a finished file
+- **WHEN** an export was uploaded and finished under `bank=sparkasse`, and the identical bytes are posted to `/uploads/csv?bank=nobank`
+- **THEN** the response is `200` with the first upload's `upload_id` and counts, and nothing is imported
 
 ## ADDED Requirements
 

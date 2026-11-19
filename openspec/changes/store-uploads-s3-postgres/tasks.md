@@ -36,7 +36,7 @@
 
 ## 7. Review
 
-- [ ] 7.1 Run the go-reviewer agent with `git diff main...HEAD`, `git log --oneline main..HEAD` and the build/vet/test output; fix its bug and risk findings (stop and ask if a fix needs a core interface change, a new dependency or a skipped test); verify `go test ./...` passes again
+- [x] 7.1 Run the go-reviewer agent with `git diff main...HEAD`, `git log --oneline main..HEAD` and the build/vet/test output; fix its bug and risk findings (stop and ask if a fix needs a core interface change, a new dependency or a skipped test); verify `go test ./...` passes again
 
 ## Workflow follow-up
 

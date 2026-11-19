@@ -86,8 +86,9 @@ POST /uploads/csv?bank=<bankName>[&filename=<name>]  (raw CSV body, 0012)
         │     done → return its id + counts      new, failed or stale (>15 min) processing
         │     processing → 409                   → claimed as processing
         ├─ S3Blobs.Put(csv/<sha256>.csv, body)
-        ├─ ingest.Importer.Import(ctx, bankName, r)     the loop below
-        └─ Finish(counts) → done, or Fail → failed  (survives a client disconnect)
+        ├─ ingest.Importer.Import(ctx, bankName, r)     the loop below, ≤ 13 min
+        └─ Finish(counts) → done, or Fail → failed  (survives a client disconnect;
+                                                    only while this claim holds)
 
 ingest.Importer.Import(ctx, bankName, r)                  the loop, testable without HTTP
         ├─ BankMappingProvider.GetMapping(bankName)  column mapping, encoding, delimiter, date and
