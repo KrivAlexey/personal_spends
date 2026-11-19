@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -53,6 +54,9 @@ func TestS3Blobs_Put(t *testing.T) {
 			if tt.wantErr != nil {
 				if !errors.Is(err, tt.wantErr) {
 					t.Fatalf("Put() error = %v, want errors.Is %v", err, tt.wantErr)
+				}
+				if strings.Contains(err.Error(), bodySum) {
+					t.Errorf("Put() error %q carries the key's hash", err)
 				}
 				return
 			}

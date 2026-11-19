@@ -22,13 +22,22 @@ import (
 type Status string
 
 const (
+	// StatusProcessing: an import of the upload is running, or died less
+	// than staleAfter ago.
 	StatusProcessing Status = "processing"
-	StatusDone       Status = "done"
-	StatusFailed     Status = "failed"
+	// StatusDone: the import finished; the record holds its counts.
+	StatusDone Status = "done"
+	// StatusFailed: the import returned an error; a repeat imports again.
+	StatusFailed Status = "failed"
 )
 
-// ErrInProgress means an upload of the same bytes is being imported right now.
-var ErrInProgress = errors.New("uploads: upload in progress")
+var (
+	// ErrInProgress means an upload of the same bytes is being imported right now.
+	ErrInProgress = errors.New("uploads: upload in progress")
+	// ErrClaimLost means another request took over the upload, so this one
+	// may no longer record its outcome.
+	ErrClaimLost = errors.New("uploads: claim lost")
+)
 
 // Request is one upload: the raw export and what the caller said about it.
 type Request struct {
@@ -50,6 +59,7 @@ type Record struct {
 	Filename   string
 	Bank       string
 	UploadedAt time.Time
+	StartedAt  time.Time // start of the latest claim; identifies it to Finish and Fail
 	Status     Status
 	Counts     ingest.Result // set only when Status is StatusDone
 }
@@ -59,8 +69,10 @@ type recordStore interface {
 	// the caller now owns its import. If not, rec is the existing record,
 	// either done or still processing.
 	Claim(ctx context.Context, sha256, bank, filename string) (rec Record, claimed bool, err error)
-	Finish(ctx context.Context, id string, counts ingest.Result) error
-	Fail(ctx context.Context, id string) error
+	// Finish and Fail record the outcome of the claim, and return
+	// ErrClaimLost if the upload was claimed again since.
+	Finish(ctx context.Context, claim Record, counts ingest.Result) error
+	Fail(ctx context.Context, claim Record) error
 }
 
 type blobStore interface {
@@ -86,6 +98,10 @@ func New(records recordStore, blobs blobStore, imp importer, logger *slog.Logger
 	}
 	return &Service{records: records, blobs: blobs, imp: imp, logger: logger}
 }
+
+// staleAfter is how long a processing record stays claimed; after that a
+// repeat may take it over (claimSQL uses the same interval).
+const staleAfter = 15 * time.Minute
 
 // finalizeTimeout bounds the status write after an import, which runs even
 // when the request is gone.
@@ -113,17 +129,17 @@ func (s *Service) Upload(ctx context.Context, req Request) (Result, error) {
 	s.logger.DebugContext(ctx, "upload claimed", "upload_id", rec.ID)
 
 	if err := s.blobs.Put(ctx, blobKey(sum), req.Body); err != nil {
-		return Result{UploadID: rec.ID}, s.fail(ctx, rec.ID, fmt.Errorf("uploads: keep file: %w", err))
+		return Result{UploadID: rec.ID}, s.fail(ctx, rec, fmt.Errorf("uploads: keep file: %w", err))
 	}
 
 	res, err := s.imp.Import(ctx, req.Bank, bytes.NewReader(req.Body))
 	if err != nil {
-		return Result{UploadID: rec.ID, Result: res}, s.fail(ctx, rec.ID, fmt.Errorf("uploads: %w", err))
+		return Result{UploadID: rec.ID, Result: res}, s.fail(ctx, rec, fmt.Errorf("uploads: %w", err))
 	}
 
 	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), finalizeTimeout)
 	defer cancel()
-	if err := s.records.Finish(fctx, rec.ID, res); err != nil {
+	if err := s.records.Finish(fctx, rec, res); err != nil {
 		return Result{UploadID: rec.ID, Result: res}, fmt.Errorf("uploads: finish: %w", err)
 	}
 	return Result{UploadID: rec.ID, Result: res}, nil
@@ -132,10 +148,10 @@ func (s *Service) Upload(ctx context.Context, req Request) (Result, error) {
 // fail marks the upload failed, on a context that outlives the request so a
 // client disconnect can't leave it processing, and returns cause joined with
 // any error from doing so.
-func (s *Service) fail(ctx context.Context, id string, cause error) error {
+func (s *Service) fail(ctx context.Context, claim Record, cause error) error {
 	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), finalizeTimeout)
 	defer cancel()
-	if err := s.records.Fail(fctx, id); err != nil {
+	if err := s.records.Fail(fctx, claim); err != nil {
 		return errors.Join(cause, fmt.Errorf("uploads: mark failed: %w", err))
 	}
 	return cause

@@ -55,7 +55,7 @@ ON CONFLICT (sha256) DO UPDATE
     OR (uploads.status = 'processing' AND uploads.started_at < now() - interval '15 minutes')
 RETURNING ` + recordColumns
 
-const recordColumns = `id::text, sha256, filename, bank, uploaded_at, status, imported, already_known, pending_skipped`
+const recordColumns = `id::text, sha256, filename, bank, uploaded_at, started_at, status, imported, already_known, pending_skipped`
 
 // Claim implements the claim described on recordStore.
 func (p *PostgresRecords) Claim(ctx context.Context, sha256, bank, filename string) (Record, bool, error) {
@@ -75,13 +75,13 @@ func (p *PostgresRecords) Claim(ctx context.Context, sha256, bank, filename stri
 }
 
 // Finish marks the upload done with counts.
-func (p *PostgresRecords) Finish(ctx context.Context, id string, counts ingest.Result) error {
-	return p.setStatus(ctx, id, StatusDone, &counts)
+func (p *PostgresRecords) Finish(ctx context.Context, claim Record, counts ingest.Result) error {
+	return p.setStatus(ctx, claim.ID, StatusDone, &counts)
 }
 
 // Fail marks the upload failed.
-func (p *PostgresRecords) Fail(ctx context.Context, id string) error {
-	return p.setStatus(ctx, id, StatusFailed, nil)
+func (p *PostgresRecords) Fail(ctx context.Context, claim Record) error {
+	return p.setStatus(ctx, claim.ID, StatusFailed, nil)
 }
 
 // setStatus sets id's status, and its counts when counts isn't nil.
@@ -117,7 +117,7 @@ func scanRecord(row pgx.Row) (Record, error) {
 		status                   string
 		imported, known, pending *int
 	)
-	err := row.Scan(&rec.ID, &rec.SHA256, &rec.Filename, &rec.Bank, &rec.UploadedAt, &status, &imported, &known, &pending)
+	err := row.Scan(&rec.ID, &rec.SHA256, &rec.Filename, &rec.Bank, &rec.UploadedAt, &rec.StartedAt, &status, &imported, &known, &pending)
 	if err != nil {
 		return Record{}, err
 	}

@@ -2,6 +2,7 @@ package uploads
 
 import (
 	"context"
+	"errors"
 	"os"
 	"strings"
 	"sync"
@@ -90,7 +91,7 @@ func TestPostgresRecords_ClaimExisting(t *testing.T) {
 		{
 			name: "done is not reclaimed and carries counts",
 			setup: func(t *testing.T, p *PostgresRecords, _ *pgxpool.Pool, id string) {
-				if err := p.Finish(context.Background(), id, counts); err != nil {
+				if err := p.Finish(context.Background(), claimOf(t, p), counts); err != nil {
 					t.Fatalf("Finish() error = %v", err)
 				}
 			},
@@ -105,7 +106,7 @@ func TestPostgresRecords_ClaimExisting(t *testing.T) {
 		{
 			name: "failed is reclaimed",
 			setup: func(t *testing.T, p *PostgresRecords, _ *pgxpool.Pool, id string) {
-				if err := p.Fail(context.Background(), id); err != nil {
+				if err := p.Fail(context.Background(), claimOf(t, p)); err != nil {
 					t.Fatalf("Fail() error = %v", err)
 				}
 			},
@@ -197,12 +198,56 @@ func TestPostgresRecords_FinishAndFailUnknownID(t *testing.T) {
 	p, _ := newTestRecords(t)
 	ctx := context.Background()
 	const missing = "00000000-0000-0000-0000-000000000000"
-	if err := p.Finish(ctx, missing, ingest.Result{}); err == nil {
+	if err := p.Finish(ctx, Record{ID: missing}, ingest.Result{}); err == nil {
 		t.Error("Finish(unknown id) error = nil, want an error")
 	}
-	if err := p.Fail(ctx, missing); err == nil {
+	if err := p.Fail(ctx, Record{ID: missing}); err == nil {
 		t.Error("Fail(unknown id) error = nil, want an error")
 	}
+}
+
+// A request whose claim went stale and was taken over must not overwrite the
+// new owner's record, whether it finishes or fails.
+func TestPostgresRecords_StaleOwnerCannotRecordOutcome(t *testing.T) {
+	p, pool := newTestRecords(t)
+	ctx := context.Background()
+	old, _, err := p.Claim(ctx, sum('d'), "sparkasse", "old.csv")
+	if err != nil {
+		t.Fatalf("first Claim() error = %v", err)
+	}
+	ageRecord(t, pool, old.ID, 16*time.Minute)
+	cur, claimed, err := p.Claim(ctx, sum('d'), "dkb", "new.csv")
+	if err != nil || !claimed {
+		t.Fatalf("reclaim = claimed %v, error %v; want claimed", claimed, err)
+	}
+
+	if err := p.Finish(ctx, old, ingest.Result{Imported: 9}); !errors.Is(err, ErrClaimLost) {
+		t.Errorf("stale Finish() error = %v, want ErrClaimLost", err)
+	}
+	if err := p.Fail(ctx, old); !errors.Is(err, ErrClaimLost) {
+		t.Errorf("stale Fail() error = %v, want ErrClaimLost", err)
+	}
+	got, err := p.bySHA256(ctx, sum('d'))
+	if err != nil {
+		t.Fatalf("bySHA256() error = %v", err)
+	}
+	if got.Status != StatusProcessing || got.Bank != "dkb" || got.Counts != (ingest.Result{}) {
+		t.Errorf("record = %+v, want the new owner's processing record", got)
+	}
+
+	if err := p.Finish(ctx, cur, ingest.Result{Imported: 1}); err != nil {
+		t.Errorf("current Finish() error = %v", err)
+	}
+}
+
+// claimOf returns the only record, as Claim returned it to its owner.
+func claimOf(t *testing.T, p *PostgresRecords) Record {
+	t.Helper()
+	rec, err := p.bySHA256(context.Background(), sum('b'))
+	if err != nil {
+		t.Fatalf("bySHA256() error = %v", err)
+	}
+	return rec
 }
 
 // ageRecord moves the record's start back by age, as if its import began then.

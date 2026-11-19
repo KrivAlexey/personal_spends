@@ -568,9 +568,9 @@ func (memRecords) Claim(_ context.Context, sum, bank, filename string) (uploads.
 	return uploads.Record{ID: "u1", SHA256: sum, Bank: bank, Filename: filename, Status: uploads.StatusProcessing}, true, nil
 }
 
-func (memRecords) Finish(context.Context, string, ingest.Result) error { return nil }
+func (memRecords) Finish(context.Context, uploads.Record, ingest.Result) error { return nil }
 
-func (memRecords) Fail(context.Context, string) error { return nil }
+func (memRecords) Fail(context.Context, uploads.Record) error { return nil }
 
 type memBlobs struct{}
 

@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/KrivAlexey/personal_spends/internal/ingest"
 	"github.com/KrivAlexey/personal_spends/internal/logging/logtest"
@@ -26,7 +28,8 @@ type fakeRecords struct {
 	claims     []string // "sha256|bank|filename"
 	finished   map[string]ingest.Result
 	failed     []string
-	failCtxErr error // ctx.Err() seen by Fail
+	failCtxErr   error // ctx.Err() seen by Fail
+	finishCtxErr error // ctx.Err() seen by Finish
 }
 
 func (f *fakeRecords) Claim(_ context.Context, sum, bank, filename string) (Record, bool, error) {
@@ -40,7 +43,9 @@ func (f *fakeRecords) Claim(_ context.Context, sum, bank, filename string) (Reco
 	return Record{ID: "u1", SHA256: sum, Bank: bank, Filename: filename, Status: StatusProcessing}, true, nil
 }
 
-func (f *fakeRecords) Finish(_ context.Context, id string, counts ingest.Result) error {
+func (f *fakeRecords) Finish(ctx context.Context, claim Record, counts ingest.Result) error {
+	id := claim.ID
+	f.finishCtxErr = ctx.Err()
 	if f.finishErr != nil {
 		return f.finishErr
 	}
@@ -51,9 +56,9 @@ func (f *fakeRecords) Finish(_ context.Context, id string, counts ingest.Result)
 	return nil
 }
 
-func (f *fakeRecords) Fail(ctx context.Context, id string) error {
+func (f *fakeRecords) Fail(ctx context.Context, claim Record) error {
 	f.failCtxErr = ctx.Err()
-	f.failed = append(f.failed, id)
+	f.failed = append(f.failed, claim.ID)
 	return f.failErr
 }
 
@@ -76,13 +81,22 @@ func (f *fakeBlobs) Put(_ context.Context, key string, body []byte) error {
 type fakeImporter struct {
 	res ingest.Result
 	err error
+	// onImport, when set, runs with the import's context before returning.
+	onImport func(ctx context.Context)
+
+	gotDeadline time.Time
+	hasDeadline bool
 
 	called  bool
 	gotBank string
 	gotBody []byte
 }
 
-func (f *fakeImporter) Import(_ context.Context, bankName string, r io.Reader) (ingest.Result, error) {
+func (f *fakeImporter) Import(ctx context.Context, bankName string, r io.Reader) (ingest.Result, error) {
+	f.gotDeadline, f.hasDeadline = ctx.Deadline()
+	if f.onImport != nil {
+		f.onImport(ctx)
+	}
 	f.called = true
 	f.gotBank = bankName
 	b, err := io.ReadAll(r)
@@ -284,6 +298,57 @@ func TestService_Upload_FailOutlivesCancelledRequest(t *testing.T) {
 	}
 	if records.failCtxErr != nil {
 		t.Errorf("Fail saw ctx.Err() = %v, want a live context", records.failCtxErr)
+	}
+}
+
+// The import finished, then the client went away: the outcome must still be
+// recorded, or the hash answers 409 until the claim goes stale.
+func TestService_Upload_FinishOutlivesCancelledRequest(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	records := &fakeRecords{}
+	imp := &fakeImporter{res: counts, onImport: func(context.Context) { cancel() }}
+
+	if _, err := New(records, &fakeBlobs{}, imp, nil).Upload(ctx, Request{Bank: "sparkasse", Body: body}); err != nil {
+		t.Fatalf("Upload() error = %v", err)
+	}
+	if _, ok := records.finished["u1"]; !ok {
+		t.Fatal("Finish not called")
+	}
+	if records.finishCtxErr != nil {
+		t.Errorf("Finish saw ctx.Err() = %v, want a live context", records.finishCtxErr)
+	}
+}
+
+// The import must end before its claim can go stale, or a repeat could
+// reclaim the upload while it still runs.
+func TestService_Upload_ImportEndsBeforeClaimIsStale(t *testing.T) {
+	imp := &fakeImporter{res: counts}
+	start := time.Now()
+
+	if _, err := New(&fakeRecords{}, &fakeBlobs{}, imp, nil).Upload(context.Background(), Request{Bank: "sparkasse", Body: body}); err != nil {
+		t.Fatalf("Upload() error = %v", err)
+	}
+	if !imp.hasDeadline {
+		t.Fatal("import context has no deadline")
+	}
+	if limit := start.Add(staleAfter - time.Minute); imp.gotDeadline.After(limit) {
+		t.Errorf("import deadline %v after start, want at least a minute before staleAfter (%v)",
+			imp.gotDeadline.Sub(start).Round(time.Second), staleAfter)
+	}
+}
+
+// A failed S3 put is logged at ERROR by the handler with its whole chain,
+// so the chain must not carry the hash (design decision 9).
+func TestService_Upload_ErrorOmitsHash(t *testing.T) {
+	_, err := New(&fakeRecords{}, NewS3Blobs(&fakeS3{err: errors.New("access denied")}, "bucket"), &fakeImporter{}, nil).
+		Upload(context.Background(), Request{Bank: "sparkasse", Body: body})
+
+	if err == nil {
+		t.Fatal("Upload() error = nil, want the put error")
+	}
+	if strings.Contains(err.Error(), bodySum) {
+		t.Errorf("error %q carries the body hash", err)
 	}
 }
 
