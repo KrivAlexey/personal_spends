@@ -89,3 +89,31 @@ output "expenses_table_name" {
 output "expenses_table_arn" {
   value = aws_dynamodb_table.expenses.arn
 }
+
+# Raw uploaded bank exports, kept under csv/<sha256>.csv (docs/decisions/0015).
+# Real AWS only: emulators don't reliably answer the provider's refresh of
+# bucket sub-resources, so the local workspace leaves the bucket to S3Mock
+# (compose.yaml). New buckets are SSE-S3 encrypted by default.
+resource "aws_s3_bucket" "uploads" {
+  count         = local.emulator ? 0 : 1
+  bucket_prefix = "personal-spends-uploads-"
+
+  tags = {
+    Project = "personal-spends"
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "uploads" {
+  count  = local.emulator ? 0 : 1
+  bucket = aws_s3_bucket.uploads[0].id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+# Set UPLOADS_BUCKET to this.
+output "uploads_bucket_name" {
+  value = one(aws_s3_bucket.uploads[*].bucket)
+}
