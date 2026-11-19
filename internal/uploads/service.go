@@ -171,5 +171,11 @@ func blobKey(sum string) string {
 	return "csv/" + sum + ".csv"
 }
 
-// List is not implemented yet.
-func (s *Service) List(ctx context.Context, limit int) ([]Record, error) { return nil, nil }
+// List returns up to limit upload records, most recently received first.
+func (s *Service) List(ctx context.Context, limit int) ([]Record, error) {
+	recs, err := s.records.List(ctx, limit)
+	if err != nil {
+		return nil, fmt.Errorf("uploads: list: %w", err)
+	}
+	return recs, nil
+}
