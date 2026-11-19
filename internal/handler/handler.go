@@ -2,7 +2,6 @@
 package handler
 
 import (
-	"bufio"
 	"context"
 	_ "embed"
 	"encoding/json"
@@ -12,16 +11,16 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/KrivAlexey/personal_spends/internal/ingest"
 	"github.com/KrivAlexey/personal_spends/internal/parser"
 	"github.com/KrivAlexey/personal_spends/internal/uploads"
 )
 
 // uploadResponse is the JSON body of a successful POST /uploads/csv.
 type uploadResponse struct {
-	Imported       int `json:"imported"`
-	AlreadyKnown   int `json:"already_known"`
-	PendingSkipped int `json:"pending_skipped"`
+	UploadID       string `json:"upload_id"`
+	Imported       int    `json:"imported"`
+	AlreadyKnown   int    `json:"already_known"`
+	PendingSkipped int    `json:"pending_skipped"`
 }
 
 type uploader interface {
@@ -75,35 +74,43 @@ func (h *Handler) openAPI(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// uploadCSV imports the export sent as the raw request body; the query
-// parameter "bank" names the bank mapping (ADR 0012).
+// maxUploadBytes caps an upload body, which is held in memory to hash it.
+// API Gateway caps payloads at 10 MB anyway.
+const maxUploadBytes = 10 << 20
+
+// uploadCSV uploads the export sent as the raw request body; the query
+// parameter "bank" names the bank mapping (ADR 0012), the optional
+// "filename" is recorded with it.
 func (h *Handler) uploadCSV(w http.ResponseWriter, r *http.Request) {
 	bank := r.URL.Query().Get("bank")
 	if bank == "" {
-		h.reject(w, r, bank, "missing bank parameter", "missing bank query parameter")
+		h.reject(w, r, http.StatusBadRequest, bank, "missing bank parameter", "missing bank query parameter")
 		return
 	}
 
-	body := &readErrRecorder{r: r.Body}
-	br := bufio.NewReader(body)
-	if _, err := br.Peek(1); err != nil {
-		if err == io.EOF {
-			h.reject(w, r, bank, "empty body", "empty bank CSV")
-			return
-		}
-		h.reject(w, r, bank, "unreadable body", "reading request body failed")
+	// Read the whole body first: the upload is keyed by its hash, and a body
+	// cut off mid-upload must fail here, before anything is stored.
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxUploadBytes))
+	if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+		h.reject(w, r, http.StatusRequestEntityTooLarge, bank, "body too large", "body larger than 10 MiB")
+		return
+	}
+	if err != nil {
+		h.reject(w, r, http.StatusBadRequest, bank, "unreadable body", "reading request body failed")
+		return
+	}
+	if len(body) == 0 {
+		h.reject(w, r, http.StatusBadRequest, bank, "empty body", "empty bank CSV")
 		return
 	}
 
-	all, _ := io.ReadAll(br)
-	ures, err := h.up.Upload(r.Context(), uploads.Request{Bank: bank, Body: all})
-	res := ures.Result
-	if err != nil && body.err != nil {
-		h.reject(w, r, bank, "unreadable body", "reading request body failed")
+	res, err := h.up.Upload(r.Context(), uploads.Request{Bank: bank, Filename: r.URL.Query().Get("filename"), Body: body})
+	if errors.Is(err, uploads.ErrInProgress) {
+		h.reject(w, r, http.StatusConflict, bank, "upload in progress", "the same file is being imported")
 		return
 	}
 	if errors.Is(err, parser.ErrBankMappingNotFound) {
-		h.reject(w, r, bank, "bank mapping not found", fmt.Sprintf("bank mapping %q not found", bank))
+		h.reject(w, r, http.StatusBadRequest, bank, "bank mapping not found", fmt.Sprintf("bank mapping %q not found", bank))
 		return
 	}
 	if err != nil {
@@ -117,7 +124,7 @@ func (h *Handler) uploadCSV(w http.ResponseWriter, r *http.Request) {
 		// The counts tell the operator how much was saved before the failure;
 		// a re-run is safe (ADR 0011).
 		h.logger.Log(r.Context(), level, "upload failed",
-			"method", r.Method, "route", r.Pattern, "bank", capBank(bank),
+			"method", r.Method, "route", r.Pattern, "bank", capBank(bank), "upload_id", res.UploadID,
 			"imported", res.Imported, "already_known", res.AlreadyKnown, "pending_skipped", res.PendingSkipped,
 			"error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -133,15 +140,15 @@ func (h *Handler) uploadCSV(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// reject answers 400 with body and logs reason, which must be fixed text
+// reject answers status with body and logs reason, which must be fixed text
 // without caller input.
-func (h *Handler) reject(w http.ResponseWriter, r *http.Request, bank, reason, body string) {
+func (h *Handler) reject(w http.ResponseWriter, r *http.Request, status int, bank, reason, body string) {
 	attrs := []any{"method", r.Method, "route", r.Pattern, "reason", reason}
 	if bank != "" {
 		attrs = append(attrs, "bank", capBank(bank))
 	}
 	h.logger.WarnContext(r.Context(), "request rejected", attrs...)
-	http.Error(w, body, http.StatusBadRequest)
+	http.Error(w, body, status)
 }
 
 const maxLoggedBankRunes = 64
@@ -159,25 +166,11 @@ func capBank(bank string) string {
 	return bank
 }
 
-func toUploadResponse(result ingest.Result) uploadResponse {
+func toUploadResponse(result uploads.Result) uploadResponse {
 	return uploadResponse{
+		UploadID:       result.UploadID,
 		Imported:       result.Imported,
 		AlreadyKnown:   result.AlreadyKnown,
 		PendingSkipped: result.PendingSkipped,
 	}
-}
-
-// readErrRecorder remembers the first read error other than io.EOF, so a body
-// cut off mid-upload is told apart from a server-side import failure.
-type readErrRecorder struct {
-	r   io.Reader
-	err error
-}
-
-func (b *readErrRecorder) Read(p []byte) (int, error) {
-	n, err := b.r.Read(p)
-	if err != nil && err != io.EOF && b.err == nil {
-		b.err = err
-	}
-	return n, err
 }

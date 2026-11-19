@@ -15,8 +15,10 @@ paths:
       summary: Import a bank export
       description: >-
         Imports the bank export sent as the raw request body. The bytes are
-        passed to the import unchanged, so the bank mapping's declared encoding
-        applies. Already-stored transactions are counted, not stored again.
+        kept and passed to the import unchanged, so the bank mapping's declared
+        encoding applies. Already-stored transactions are counted, not stored
+        again. A body byte-identical to an earlier finished upload is not
+        imported again: the response repeats that upload's id and counts.
       parameters:
         - name: bank
           in: query
@@ -25,6 +27,12 @@ paths:
           schema:
             type: string
             minLength: 1
+        - name: filename
+          in: query
+          required: false
+          description: Name of the uploaded file, recorded with the upload.
+          schema:
+            type: string
       requestBody:
         required: true
         description: The bank export file, sent as-is.
@@ -44,6 +52,20 @@ paths:
           description: >-
             Missing or empty bank parameter, empty or unreadable body, or no
             bank mapping for bank. Nothing is imported.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "409":
+          description: >-
+            A byte-identical file is being imported right now. Nothing is
+            imported; retry once it has finished.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "413":
+          description: The body is larger than 10 MiB (10,485,760 bytes). Nothing is kept or imported.
           content:
             text/plain:
               schema:
@@ -71,8 +93,11 @@ components:
   schemas:
     UploadResult:
       type: object
-      required: [imported, already_known, pending_skipped]
+      required: [upload_id, imported, already_known, pending_skipped]
       properties:
+        upload_id:
+          type: string
+          description: Id of the upload; the same for every upload of the same bytes.
         imported:
           type: integer
           description: New transactions categorized and stored.
