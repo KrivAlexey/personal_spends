@@ -154,3 +154,6 @@ func (provider *FileMappingProvider) GetMapping(ctx context.Context, bankName st
 	}
 	return BankMapping{}, ErrBankMappingNotFound
 }
+
+// Banks is not implemented yet.
+func (provider *FileMappingProvider) Banks() []string { return nil }

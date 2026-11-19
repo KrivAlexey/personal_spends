@@ -90,3 +90,44 @@ func TestNewFileMappingProvider_Invalid(t *testing.T) {
 		})
 	}
 }
+
+func TestFileMappingProvider_Banks(t *testing.T) {
+	committed, err := os.ReadFile("bank_mappings.yaml")
+	if err != nil {
+		t.Fatalf("read committed mappings: %v", err)
+	}
+	// Two copies of the committed Sparkasse entry under other names.
+	entry := strings.SplitN(string(committed), "\n", 2)[1]
+	twoBanks := "allMappings:\n" +
+		strings.Replace(entry, "bankName: sparkasse", "bankName: zbank", 1) +
+		strings.Replace(entry, "bankName: sparkasse", "bankName: abank", 1)
+	path := filepath.Join(t.TempDir(), "two.yaml")
+	if err := os.WriteFile(path, []byte(twoBanks), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name string
+		file string
+		want []string
+	}{
+		{name: "committed mappings", file: "bank_mappings.yaml", want: []string{"sparkasse"}},
+		{name: "sorted", file: path, want: []string{"abank", "zbank"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			provider, err := NewFileMappingProvider(context.Background(), tt.file)
+			if err != nil {
+				t.Fatalf("NewFileMappingProvider: %v", err)
+			}
+			got := provider.Banks()
+			if fmt.Sprint(got) != fmt.Sprint(tt.want) {
+				t.Fatalf("Banks() = %v, want %v", got, tt.want)
+			}
+			got[0] = "changed"
+			if again := provider.Banks(); fmt.Sprint(again) != fmt.Sprint(tt.want) {
+				t.Errorf("Banks() after caller changed the result = %v, want %v", again, tt.want)
+			}
+		})
+	}
+}
