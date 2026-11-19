@@ -2,7 +2,7 @@
 
 ## Overview
 
-`personal_spends` is a Go backend that accepts bank CSV exports, categorizes expenses using Claude AI, and stores structured results in DynamoDB. It exposes a REST API (API Gateway + Lambda) and a local MCP server (stdio) for AI agent queries.
+`personal_spends` is a Go backend that accepts bank CSV exports, keeps each uploaded file in S3 with a record in PostgreSQL, categorizes expenses using Claude AI, and stores structured results in DynamoDB. It exposes a REST API (API Gateway + Lambda) and a local MCP server (stdio) for AI agent queries.
 
 v1 is deliberately the smallest end-to-end path: CSV upload, serial categorization, DynamoDB write ([0007](decisions/0007-serial-loop-for-v1.md), [0009](decisions/0009-csv-only-v1.md)). The worker pool is step 2; receipt image extraction is backlog.
 
@@ -17,11 +17,12 @@ This document describes the v1 target. What is built so far:
 | `internal/parser` | Built: `Parser.ParseCSV` (pending filter, transaction IDs) + `FileMappingProvider`, tested |
 | `internal/storage` | Built: `PutExpense`, `SaveExpenses` (batched, retried), `KnownIDs`, tested. Not yet: `QueryExpenses` |
 | `internal/ingest` | Built: `Importer.Import` (serial loop, skips known rows), tested with fakes |
-| `internal/handler` | Built: `POST /uploads/csv` ([0012](decisions/0012-raw-csv-upload-body.md)), `GET /openapi.yaml` ([0014](decisions/0014-hand-written-openapi-spec.md)), request ID + access log + panic recovery middleware, tested with a fake importer. Not yet: other endpoints, `X-API-Key` middleware |
+| `internal/uploads` | Built: `Service.Upload` (claim by SHA-256, keep the file, import, record the outcome), `PostgresRecords`, `S3Blobs`, tested with fakes; Postgres and S3 integration tests run against the compose containers only ([0015](decisions/0015-upload-files-and-records.md)) |
+| `internal/handler` | Built: `POST /uploads/csv` ([0012](decisions/0012-raw-csv-upload-body.md), over `uploads.Service`), `GET /openapi.yaml` ([0014](decisions/0014-hand-written-openapi-spec.md)), request ID + access log + panic recovery middleware, tested with a fake uploader. Not yet: other endpoints, `X-API-Key` middleware |
 | `internal/logging` | Built: `New` (level/format), context attributes (`request_id`, `batch`, `batches`), tested ([0013](decisions/0013-structured-logging-with-slog.md)) |
-| `cmd/server` | Built: wires the CSV upload path, serves `localhost:8080`, graceful shutdown on SIGINT/SIGTERM. `CATEGORIZER=fake` + DynamoDB Local run it offline (README). Checked by running it |
+| `cmd/server` | Built: wires the CSV upload path, serves `localhost:8080`, graceful shutdown on SIGINT/SIGTERM, creates the `uploads` table at startup. `CATEGORIZER=fake` + the `compose.yaml` containers run it offline (README). Checked by running it |
 | `internal/mcp`, `cmd/lambda`, `cmd/mcp` | Not started |
-| Terraform | DynamoDB table with GSI1 only; workspace `local` creates it in DynamoDB Local. Not yet: Lambda, API Gateway |
+| Terraform | DynamoDB table with GSI1; uploads S3 bucket (real AWS only, S3Mock locally); workspace `local` creates the table in DynamoDB Local. Not yet: Lambda, API Gateway, RDS for `uploads` |
 | Configuration (below) | Read by `cmd/server`, except `API_KEY` (no auth middleware yet) and `WORKER_POOL_SIZE` (step 2) |
 
 ---
@@ -49,8 +50,9 @@ This document describes the v1 target. What is built so far:
 │                                          │   ├─ handler     │   │
 │                                          │   ├─ parser      │   │
 │                                          │   ├─ categorizer─┼───┼──► Anthropic API
-│                                          │   └─ storage     │   │    (Claude Haiku)
-│                                          │        │         │   │
+│                                          │   ├─ storage     │   │    (Claude Haiku)
+│                                          │   └─ uploads ────┼───┼──► S3 (files), PostgreSQL
+│                                          │        │         │   │    (records; local until RDS)
 │                                          │        ▼         │   │
 │                                          │  DynamoDB        │   │
 │                                          └──────────────────┘   │
@@ -76,9 +78,18 @@ Three thin `main.go` files, all wiring up the same `internal/` packages:
 ### CSV upload
 
 ```
-POST /uploads/csv?bank=<bankName>  (raw CSV body, 0012)
+POST /uploads/csv?bank=<bankName>[&filename=<name>]  (raw CSV body, 0012)
   │
-  └─ ingest.Importer.Import(ctx, bankName, r)            the loop, testable without HTTP
+  ├─ read the whole body (max 10 MiB, else 413; empty or unreadable → 400)
+  └─ uploads.Service.Upload(ctx, {bank, filename, body})       0015
+        ├─ PostgresRecords.Claim(sha256(body))   atomic upsert on the unique hash:
+        │     done → return its id + counts      new, failed or stale (>15 min) processing
+        │     processing → 409                   → claimed as processing
+        ├─ S3Blobs.Put(csv/<sha256>.csv, body)
+        ├─ ingest.Importer.Import(ctx, bankName, r)     the loop below
+        └─ Finish(counts) → done, or Fail → failed  (survives a client disconnect)
+
+ingest.Importer.Import(ctx, bankName, r)                  the loop, testable without HTTP
         ├─ BankMappingProvider.GetMapping(bankName)  column mapping, encoding, delimiter, date and
         │                              decimal format, pending marker, identity columns
         ├─ Parser.ParseCSV(ctx, bankName, r)   drops pending rows, assigns each row its ID
@@ -88,10 +99,13 @@ POST /uploads/csv?bank=<bankName>  (raw CSV body, 0012)
         │     ├─ categorizer.Categorize(batch)   one Claude Haiku call per batch
         │     │     returns: category and confidence per transaction
         │     └─ storage.SaveExpenses()          batch write to DynamoDB
-        └─ returns { imported, already_known, pending_skipped }
+        └─ returns { imported, already_known, pending_skipped }  (+ upload_id from Upload)
 ```
 
-Re-uploading a file or an overlapping export imports only rows not stored before
+Re-posting the identical bytes is answered from the upload record without importing
+([0015](decisions/0015-upload-files-and-records.md); spec:
+[`openspec/specs/upload-tracking`](../openspec/specs/upload-tracking/spec.md)). An
+overlapping export, or a failed upload retried, imports only rows not stored before
 ([0011](decisions/0011-transaction-identity-and-deduplication.md); spec:
 [`openspec/specs/csv-import`](../openspec/specs/csv-import/spec.md)). Everything below
 `Import` is built, and so is the handler calling it; `cmd/server` serves it locally.
@@ -149,7 +163,7 @@ type BankMappingProvider interface {
 | `BankMappingProvider` | `FileMappingProvider` (`bank_mappings.yaml`) | Runtime detection with Claude |
 
 Image extraction is intentionally absent from `Categorizer`. It comes back as
-its own method when the S3 bucket and the Claude Vision call are built together
+its own method when image uploads and the Claude Vision call are built together
 — an interface method with no implementation stops every implementation from
 satisfying the interface ([0009](decisions/0009-csv-only-v1.md)).
 
@@ -192,6 +206,25 @@ Single-table design. Access patterns drive the key structure.
 
 Enables: "show all grocery expenses in April", "sum transport costs for Q1".
 
+### PostgreSQL — `uploads` table
+
+One row per distinct uploaded file content ([0015](decisions/0015-upload-files-and-records.md)). Schema: `internal/uploads/schema.sql`, applied at startup with `CREATE TABLE IF NOT EXISTS`.
+
+| Column | Type | Value |
+|--------|------|-------|
+| `id` | `uuid` PK | `gen_random_uuid()`, returned as `upload_id` |
+| `sha256` | `char(64)` unique | Hex SHA-256 of the body, the idempotency key |
+| `filename` | `text` | `filename` query parameter, `''` when absent |
+| `bank` | `text` | `bank` query parameter of the latest claim |
+| `uploaded_at` | `timestamptz` | First receipt |
+| `started_at` | `timestamptz` | Start of the latest import; a `processing` row older than 15 minutes can be reclaimed |
+| `status` | `text` | `processing`, `done` or `failed` |
+| `imported`, `already_known`, `pending_skipped` | `integer` | Import counts, set only when `done` |
+
+### S3 — uploads bucket
+
+Each kept file is at `csv/<sha256 hex>.csv`, unchanged bytes, `Content-Type: text/csv`. No lifecycle rule yet.
+
 ---
 
 ## API Endpoints
@@ -200,7 +233,7 @@ All endpoints require `X-API-Key` header. Built endpoints are specified in [`ope
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/uploads/csv` | Upload bank export CSV as the raw body (`bank` param, required); returns `imported`, `already_known`, `pending_skipped` ([0012](decisions/0012-raw-csv-upload-body.md)) |
+| `POST` | `/uploads/csv` | Upload bank export CSV as the raw body (`bank` param, required; `filename` optional); returns `upload_id`, `imported`, `already_known`, `pending_skipped`. Identical bytes again: the first upload's result. `409` while the same bytes are importing, `413` over 10 MiB ([0012](decisions/0012-raw-csv-upload-body.md), [0015](decisions/0015-upload-files-and-records.md)) |
 | `GET` | `/expenses` | Query expenses (`from`, `to`, `category`, `min_amount`, `max_amount`, `limit` params) |
 | `POST` | `/expenses` | Add a single expense manually (JSON body with the expense fields) |
 | `GET` | `/expenses/summary` | Spending totals grouped by category (`from`, `to` params) |
@@ -263,6 +296,9 @@ collect from results chan ──► storage.SaveExpenses()
 | `DYNAMODB_TABLE` | Expenses table name | `personal-spends-expenses` |
 | `AWS_REGION` | AWS region | `eu-central-1` |
 | `AWS_ENDPOINT_URL_DYNAMODB` | DynamoDB endpoint override, read by the AWS SDK; `http://localhost:8000` for DynamoDB Local | unset (real AWS) |
+| `UPLOADS_BUCKET` | S3 bucket for uploaded files (Terraform output `uploads_bucket_name`; `personal-spends-uploads` in S3Mock) | required |
+| `AWS_ENDPOINT_URL_S3` | S3 endpoint override, read by the AWS SDK; `http://localhost:9090` for S3Mock. When set, `cmd/server` also uses path-style addressing | unset (real AWS) |
+| `DATABASE_URL` | PostgreSQL connection string for upload records, e.g. `postgres://spends:spends@localhost:5432/spends` (compose) | required |
 | `BATCH_SIZE` | Transactions per Claude API call | `50` |
 | `WORKER_POOL_SIZE` | Max concurrent categorizer goroutines (step 2) | `5` |
 | `LOG_LEVEL` | `debug`, `info`, `warn` or `error` (case-insensitive) | `info` |
@@ -275,9 +311,9 @@ collect from results chan ──► storage.SaveExpenses()
 `log/slog`, one logger built by `logging.New` and injected into the handler, importer, categorizer and store ([0013](decisions/0013-structured-logging-with-slog.md)). What is logged is specified in [`openspec/specs/logging`](../openspec/specs/logging/spec.md):
 
 - INFO: one access record per request (`method`, `route`, `status`, `duration_ms`), never the raw path
-- WARN: `400` rejections (fixed `reason`), client disconnects, DynamoDB retries
-- ERROR: `500`s, with the full error chain; handler panics, with the stack
-- DEBUG: parse, dedup, per-batch categorize and save, and the import summary
+- WARN: `400`, `409` and `413` rejections (fixed `reason`), client disconnects, DynamoDB retries
+- ERROR: `500`s, with the full error chain and `upload_id`; handler panics, with the stack
+- DEBUG: upload claimed or repeated (`upload_id`, `status`), parse, dedup, per-batch categorize and save, and the import summary
 
 Every record logged while serving a request carries `request_id`, added from the context by the `logging` handler wrapper together with `batch`/`batches`. Errors are logged once, at the handler. No bank data reaches the logs at any level.
 
@@ -286,9 +322,9 @@ Every record logged while serving a request carries `request_id`, added from the
 ## Later Changes (the backlog, in order)
 
 1. **Worker pool:** replace the serial batch loop with a bounded pool of goroutines fed by a channel, results collected before the DynamoDB write. First step after v1 runs end to end.
-2. **Receipt / bill images:** `POST /uploads/image` stores to S3 (30-day lifecycle) and a Vision call extracts `[]Transaction`, which then takes the same path as CSV rows. Adds the S3 bucket to Terraform and a method back onto `Categorizer`.
+2. **Receipt / bill images:** `POST /uploads/image` stores to the uploads S3 bucket (built for CSVs, [0015](decisions/0015-upload-files-and-records.md); 30-day lifecycle on images) and a Vision call extracts `[]Transaction`, which then takes the same path as CSV rows. Adds a method back onto `Categorizer`.
 3. **SQS fan-out:** S3 event on CSV upload triggers SQS. Lambda reads SQS batches instead of the whole file. Worker pool moves from intra-Lambda goroutines to parallel Lambda invocations.
-4. **RDS PostgreSQL:** `CategoryProvider` swaps from YAML to Postgres. Adds `categories`, `vendor_rules`, and `budgets` tables. Lambda gets RDS Proxy for connection pooling. Requires VPC in Terraform.
+4. **RDS PostgreSQL:** hosts the `uploads` table, which runs only locally until then ([0015](decisions/0015-upload-files-and-records.md)). `CategoryProvider` swaps from YAML to Postgres. Adds `categories`, `vendor_rules`, and `budgets` tables. Lambda gets RDS Proxy for connection pooling. Requires VPC in Terraform.
 5. **Bedrock:** `Categorizer` swaps from Anthropic SDK to `BedrockCategorizer` using `InvokeModelWithResponseStream`. Model ID configurable via env var, no changes in callers.
 6. **MCP SSE transport:** make the MCP server reachable from claude.ai and other remote agents.
 7. **On-demand GPU:** vLLM on spot EC2, brought up only during processing, for self-hosted model experiments (`VLLMCategorizer`).

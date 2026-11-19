@@ -16,7 +16,7 @@ Read the relevant doc before changing a subsystem; update it in the same PR when
 
 ## Development
 
-Prerequisites: Go 1.26+ (per `go.mod`), AWS CLI configured, Terraform 1.6+, `ANTHROPIC_API_KEY` in `.env`.
+Prerequisites: Go 1.26+ (per `go.mod`), AWS CLI configured, Terraform 1.6+, Docker with Compose (`compose.yaml`: local DynamoDB, Postgres, S3), `ANTHROPIC_API_KEY` in `.env`.
 
 ```bash
 go run ./cmd/server        # HTTP server on localhost:8080, run from the repo root
