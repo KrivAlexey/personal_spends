@@ -38,7 +38,7 @@ type openAPIOperation struct {
 
 type openAPISchema struct {
 	Ref        string                   `yaml:"$ref"`
-	Type       string                   `yaml:"type"`
+	Type       any                      `yaml:"type"` // a string, or a list such as [integer, "null"]
 	Required   []string                 `yaml:"required"`
 	Properties map[string]openAPISchema `yaml:"properties"`
 	Items      *openAPISchema           `yaml:"items"`
@@ -108,7 +108,12 @@ func TestOpenAPICoversRoutes(t *testing.T) {
 		}
 	}
 	slices.Sort(documented)
-	registered := slices.Sorted(maps.Keys(New(&fakeUploader{}, testBanks, nil).routes()))
+	var registered []string
+	for pattern := range New(&fakeUploader{}, testBanks, nil).routes() {
+		// "{$}" is ServeMux syntax for "this path exactly"; OpenAPI paths are exact anyway.
+		registered = append(registered, strings.TrimSuffix(pattern, "{$}"))
+	}
+	slices.Sort(registered)
 
 	if !slices.Equal(documented, registered) {
 		t.Errorf("spec documents %v, server registers %v", documented, registered)

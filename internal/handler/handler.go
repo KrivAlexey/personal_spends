@@ -86,7 +86,13 @@ func (h *Handler) Routes() http.Handler {
 func (h *Handler) routes() map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
 		"POST /uploads/csv": h.uploadCSV,
+		"GET /uploads":      h.listUploads,
+		"GET /banks":        h.listBanks,
 		"GET /openapi.yaml": h.openAPI,
+		// {$}: only the root itself is the page, other paths stay 404.
+		"GET /{$}":     h.webFile("web/index.html", "text/html; charset=utf-8"),
+		"GET /app.js":  h.webFile("web/app.js", "text/javascript; charset=utf-8"),
+		"GET /app.css": h.webFile("web/app.css", "text/css; charset=utf-8"),
 	}
 }
 
@@ -94,6 +100,56 @@ func (h *Handler) routes() map[string]http.HandlerFunc {
 func (h *Handler) openAPI(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/yaml")
 	if _, err := w.Write(openAPISpec); err != nil {
+		h.logger.WarnContext(r.Context(), "write response failed",
+			"method", r.Method, "route", r.Pattern, "error", err)
+	}
+}
+
+// maxListedUploads is how many upload records GET /uploads returns.
+const maxListedUploads = 100
+
+// listUploads answers the most recent upload records, newest first.
+func (h *Handler) listUploads(w http.ResponseWriter, r *http.Request) {
+	recs, err := h.up.List(r.Context(), maxListedUploads)
+	if err != nil {
+		h.logger.ErrorContext(r.Context(), "list uploads failed",
+			"method", r.Method, "route", r.Pattern, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	entries := make([]uploadEntry, 0, len(recs))
+	for _, rec := range recs {
+		entries = append(entries, toUploadEntry(rec))
+	}
+	h.writeJSON(w, r, struct {
+		Uploads []uploadEntry `json:"uploads"`
+	}{entries})
+}
+
+func toUploadEntry(rec uploads.Record) uploadEntry {
+	e := uploadEntry{
+		UploadID:   rec.ID,
+		Filename:   rec.Filename,
+		Bank:       rec.Bank,
+		UploadedAt: rec.UploadedAt.UTC(),
+		Status:     string(rec.Status),
+	}
+	if rec.Status == uploads.StatusDone {
+		c := rec.Counts
+		e.Imported, e.AlreadyKnown, e.PendingSkipped = &c.Imported, &c.AlreadyKnown, &c.PendingSkipped
+	}
+	return e
+}
+
+// listBanks answers the configured bank mapping names.
+func (h *Handler) listBanks(w http.ResponseWriter, r *http.Request) {
+	h.writeJSON(w, r, banksResponse{Banks: h.banks.Banks()})
+}
+
+// writeJSON answers 200 with v as JSON.
+func (h *Handler) writeJSON(w http.ResponseWriter, r *http.Request, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(v); err != nil {
 		h.logger.WarnContext(r.Context(), "write response failed",
 			"method", r.Method, "route", r.Pattern, "error", err)
 	}

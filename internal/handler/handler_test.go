@@ -588,7 +588,9 @@ func (memRecords) Finish(context.Context, uploads.Record, ingest.Result) error {
 
 func (memRecords) Fail(context.Context, uploads.Record) error { return nil }
 
-func (memRecords) List(context.Context, int) ([]uploads.Record, error) { return []uploads.Record{}, nil }
+func (memRecords) List(context.Context, int) ([]uploads.Record, error) {
+	return []uploads.Record{}, nil
+}
 
 type memBlobs struct{}
 
