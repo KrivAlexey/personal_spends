@@ -1,9 +1,11 @@
 package uploads
 
 import (
+	"bytes"
 	"context"
-	"errors"
+	"fmt"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
@@ -23,6 +25,16 @@ func NewS3Blobs(client s3API, bucket string) *S3Blobs {
 	return &S3Blobs{client: client, bucket: bucket}
 }
 
+// Put stores body unchanged under key, replacing any object there.
 func (b *S3Blobs) Put(ctx context.Context, key string, body []byte) error {
-	return errors.New("uploads: not implemented")
+	_, err := b.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:      aws.String(b.bucket),
+		Key:         aws.String(key),
+		Body:        bytes.NewReader(body),
+		ContentType: aws.String("text/csv"),
+	})
+	if err != nil {
+		return fmt.Errorf("s3 put %s: %w", key, err)
+	}
+	return nil
 }
