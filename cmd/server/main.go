@@ -17,6 +17,8 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/KrivAlexey/personal_spends/internal/categories"
 	"github.com/KrivAlexey/personal_spends/internal/categorizer"
@@ -25,6 +27,7 @@ import (
 	"github.com/KrivAlexey/personal_spends/internal/logging"
 	"github.com/KrivAlexey/personal_spends/internal/parser"
 	"github.com/KrivAlexey/personal_spends/internal/storage"
+	"github.com/KrivAlexey/personal_spends/internal/uploads"
 )
 
 const (
@@ -74,10 +77,34 @@ func run(ctx context.Context) error {
 
 	imp := ingest.NewImporter(parser.NewParser(mappings), cat, store, batchSize, logger)
 
+	bucket := os.Getenv("UPLOADS_BUCKET")
+	if bucket == "" {
+		return errors.New("UPLOADS_BUCKET is required")
+	}
+	// Emulators such as S3Mock don't serve virtual-host bucket names.
+	usePathStyle := os.Getenv("AWS_ENDPOINT_URL_S3") != ""
+	blobs := uploads.NewS3Blobs(s3.NewFromConfig(awsCfg, func(o *s3.Options) { o.UsePathStyle = usePathStyle }), bucket)
+
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		return errors.New("DATABASE_URL is required")
+	}
+	pool, err := pgxpool.New(ctx, dbURL)
+	if err != nil {
+		return fmt.Errorf("connecting to postgres: %w", err)
+	}
+	defer pool.Close()
+	records := uploads.NewPostgresRecords(pool)
+	if err := records.EnsureSchema(ctx); err != nil {
+		return err
+	}
+
+	up := uploads.New(records, blobs, imp, logger)
+
 	// No WriteTimeout: an upload waits on Claude for every batch.
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           handler.New(imp, logger).Routes(),
+		Handler:           handler.New(up, logger).Routes(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
