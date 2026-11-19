@@ -52,7 +52,7 @@
 
 ## 6. Review
 
-- [ ] 6.1 Run the go-reviewer agent with `git diff feature/store-uploads-s3-postgres...HEAD` (or `main...HEAD` if #124 has merged), the matching `git log --oneline` and the build/vet/test output; fix its bug and risk findings (stop and ask if a fix needs a core interface change, a new dependency or a skipped test); verify `go test ./...` passes again
+- [x] 6.1 Run the go-reviewer agent with `git diff feature/store-uploads-s3-postgres...HEAD` (or `main...HEAD` if #124 has merged), the matching `git log --oneline` and the build/vet/test output; fix its bug and risk findings (stop and ask if a fix needs a core interface change, a new dependency or a skipped test); verify `go test ./...` passes again
 
 ## Workflow follow-up
 
