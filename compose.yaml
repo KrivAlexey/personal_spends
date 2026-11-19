@@ -1,0 +1,22 @@
+# Local stand-ins for the AWS services and Postgres, for `scripts/run-local.sh`
+# and the integration tests. Data is in-memory: `docker compose down` wipes it.
+services:
+  dynamodb:
+    image: amazon/dynamodb-local:3.3.2
+    command: -jar DynamoDBLocal.jar -inMemory
+    ports: ["8000:8000"]
+
+  postgres:
+    image: postgres:17.12-alpine
+    environment:
+      POSTGRES_USER: spends
+      POSTGRES_PASSWORD: spends
+      POSTGRES_DB: spends
+    ports: ["5432:5432"]
+    tmpfs: [/var/lib/postgresql/data]
+
+  s3:
+    image: adobe/s3mock:5.2.3
+    environment:
+      COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS: personal-spends-uploads
+    ports: ["9090:9090"]
