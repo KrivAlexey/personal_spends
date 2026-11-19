@@ -155,5 +155,8 @@ func (provider *FileMappingProvider) GetMapping(ctx context.Context, bankName st
 	return BankMapping{}, ErrBankMappingNotFound
 }
 
-// Banks is not implemented yet.
-func (provider *FileMappingProvider) Banks() []string { return nil }
+// Banks returns the name of every mapping, sorted: the values GetMapping
+// accepts. The slice is the caller's to modify.
+func (provider *FileMappingProvider) Banks() []string {
+	return slices.Sorted(maps.Keys(provider.mappings))
+}
