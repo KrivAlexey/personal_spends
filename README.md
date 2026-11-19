@@ -63,6 +63,8 @@ aws dynamodb scan --table-name personal-spends-expenses --endpoint-url http://lo
 
 The first upload imports 5 rows and skips 1 pending; a second upload reports them as `already_known`.
 
+To skip typing the variables, put them in `.env.local` (gitignored) and run `scripts/run-local.sh`; pass another env file as the first argument, e.g. `scripts/run-local.sh .env`. The file is sourced as shell code, so quote values that contain spaces.
+
 ## Build and test
 
 ```bash
