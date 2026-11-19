@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Runs cmd/server with the settings in .env.local (default) or the env file given as $1.
+# The env file is sourced as shell code: quote values with spaces.
 set -euo pipefail
-cd "$(dirname "$0")/.."
-env_file="${1:-.env.local}"
+root="$(cd "$(dirname "$0")/.." && pwd)"
+env_file="$(realpath -m -- "${1:-$root/.env.local}")"  # $1 is relative to the caller's cwd
 [[ -f "$env_file" ]] || { echo "missing $env_file" >&2; exit 1; }
-set -a; . "./$env_file"; set +a
+set -a; . "$env_file"; set +a
+cd "$root"
 exec go run ./cmd/server
