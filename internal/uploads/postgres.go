@@ -140,3 +140,6 @@ func scanRecord(row pgx.Row) (Record, error) {
 	}
 	return rec, nil
 }
+
+// List is not implemented yet.
+func (p *PostgresRecords) List(ctx context.Context, limit int) ([]Record, error) { return nil, nil }
