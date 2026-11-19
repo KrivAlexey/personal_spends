@@ -97,12 +97,20 @@ func TestFileMappingProvider_Banks(t *testing.T) {
 		t.Fatalf("read committed mappings: %v", err)
 	}
 	// Two copies of the committed Sparkasse entry under other names.
-	entry := strings.SplitN(string(committed), "\n", 2)[1]
+	_, entry, ok := strings.Cut(string(committed), "allMappings:\n")
+	if !ok {
+		t.Fatal("bank_mappings.yaml has no allMappings: line")
+	}
 	twoBanks := "allMappings:\n" +
 		strings.Replace(entry, "bankName: sparkasse", "bankName: zbank", 1) +
 		strings.Replace(entry, "bankName: sparkasse", "bankName: abank", 1)
 	path := filepath.Join(t.TempDir(), "two.yaml")
 	if err := os.WriteFile(path, []byte(twoBanks), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	empty := filepath.Join(t.TempDir(), "empty.yaml")
+	if err := os.WriteFile(empty, []byte("allMappings: []\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -113,6 +121,7 @@ func TestFileMappingProvider_Banks(t *testing.T) {
 	}{
 		{name: "committed mappings", file: "bank_mappings.yaml", want: []string{"sparkasse"}},
 		{name: "sorted", file: path, want: []string{"abank", "zbank"}},
+		{name: "no mappings is empty, not nil", file: empty, want: []string{}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -121,8 +130,11 @@ func TestFileMappingProvider_Banks(t *testing.T) {
 				t.Fatalf("NewFileMappingProvider: %v", err)
 			}
 			got := provider.Banks()
-			if fmt.Sprint(got) != fmt.Sprint(tt.want) {
-				t.Fatalf("Banks() = %v, want %v", got, tt.want)
+			if got == nil || fmt.Sprint(got) != fmt.Sprint(tt.want) {
+				t.Fatalf("Banks() = %#v, want %#v", got, tt.want)
+			}
+			if len(got) == 0 {
+				return
 			}
 			got[0] = "changed"
 			if again := provider.Banks(); fmt.Sprint(again) != fmt.Sprint(tt.want) {

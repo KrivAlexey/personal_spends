@@ -11,6 +11,10 @@ import (
 	"github.com/KrivAlexey/personal_spends/internal/logging/logtest"
 )
 
+// default-src doesn't cover framing; frame-ancestors keeps other sites from
+// framing the Upload button (clickjacking).
+const wantCSP = "default-src 'self'; frame-ancestors 'none'"
+
 func TestWebAssets(t *testing.T) {
 	tests := []struct {
 		path        string
@@ -33,8 +37,8 @@ func TestWebAssets(t *testing.T) {
 			if got := h.Get("Content-Type"); got != tt.contentType {
 				t.Errorf("Content-Type = %q, want %q", got, tt.contentType)
 			}
-			if got := h.Get("Content-Security-Policy"); got != "default-src 'self'" {
-				t.Errorf("Content-Security-Policy = %q, want default-src 'self'", got)
+			if got := h.Get("Content-Security-Policy"); got != wantCSP {
+				t.Errorf("Content-Security-Policy = %q, want %q", got, wantCSP)
 			}
 			if got := h.Get("X-Content-Type-Options"); got != "nosniff" {
 				t.Errorf("X-Content-Type-Options = %q, want nosniff", got)

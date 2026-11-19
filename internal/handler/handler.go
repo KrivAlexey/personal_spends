@@ -62,6 +62,11 @@ type uploadEntry struct {
 	PendingSkipped *int      `json:"pending_skipped"`
 }
 
+// uploadsResponse is the JSON body of GET /uploads.
+type uploadsResponse struct {
+	Uploads []uploadEntry `json:"uploads"`
+}
+
 // banksResponse is the JSON body of GET /banks.
 type banksResponse struct {
 	Banks []string `json:"banks"`

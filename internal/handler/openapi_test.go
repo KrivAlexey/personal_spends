@@ -222,6 +222,9 @@ func TestOpenAPIListSchemas(t *testing.T) {
 	}
 
 	uploadsBody := resolve(doc.Paths["/uploads"]["get"].Responses["200"].Content["application/json"].Schema)
+	if got, want := slices.Sorted(maps.Keys(uploadsBody.Properties)), jsonFields(reflect.TypeFor[uploadsResponse]()); !slices.Equal(got, want) {
+		t.Errorf("uploads body properties = %v, want %v", got, want)
+	}
 	items := uploadsBody.Properties["uploads"].Items
 	if items == nil {
 		t.Fatal("GET /uploads 200 schema has no uploads array with items")
@@ -232,6 +235,20 @@ func TestOpenAPIListSchemas(t *testing.T) {
 	}
 	if got, want := slices.Sorted(slices.Values(entry.Required)), jsonFields(reflect.TypeFor[uploadEntry]()); !slices.Equal(got, want) {
 		t.Errorf("upload entry required = %v, want %v", got, want)
+	}
+	// Each Go field's JSON type, as OpenAPI 3.1 writes it: a pointer can be null.
+	typ := reflect.TypeFor[uploadEntry]()
+	for i := range typ.NumField() {
+		f := typ.Field(i)
+		name := strings.Split(f.Tag.Get("json"), ",")[0]
+		want := map[reflect.Kind]string{reflect.String: "string", reflect.Int: "integer", reflect.Struct: "string"}
+		var wantType any = want[f.Type.Kind()]
+		if f.Type.Kind() == reflect.Pointer {
+			wantType = []any{want[f.Type.Elem().Kind()], "null"}
+		}
+		if got := entry.Properties[name].Type; !reflect.DeepEqual(got, wantType) {
+			t.Errorf("upload entry %s type = %#v, want %#v", name, got, wantType)
+		}
 	}
 
 	banksBody := resolve(doc.Paths["/banks"]["get"].Responses["200"].Content["application/json"].Schema)

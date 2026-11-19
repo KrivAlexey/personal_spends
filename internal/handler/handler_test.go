@@ -775,6 +775,35 @@ func TestListUploads_FailureHidesInternals(t *testing.T) {
 	}
 }
 
+// A client that goes away mid-list (reload, closed tab) isn't a server fault.
+func TestListUploads_ClientDisconnectIsWarn(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	up := &fakeUploader{}
+	up.listErr = fmt.Errorf("uploads: list: postgres: %w", context.Canceled)
+	h, buf := loggedHandler(up, slog.LevelInfo)
+	cancel()
+	h.Routes().ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/uploads", nil).WithContext(ctx))
+
+	recs := logtest.Records(t, buf)
+	if n := len(logtest.Filter(recs, "ERROR", "")); n != 0 {
+		t.Errorf("got %d ERROR records, want 0:\n%s", n, buf)
+	}
+	if n := len(logtest.Filter(recs, "WARN", "list uploads failed")); n != 1 {
+		t.Errorf("got %d WARN list uploads failed, want 1:\n%s", n, buf)
+	}
+}
+
+func TestListBanks_NoneIsEmptyList(t *testing.T) {
+	rec := httptest.NewRecorder()
+	New(&fakeUploader{}, nilBanks{}, nil).Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/banks", nil))
+
+	assertJSONEqual(t, rec.Body.Bytes(), `{"banks": []}`)
+}
+
+type nilBanks struct{}
+
+func (nilBanks) Banks() []string { return nil }
+
 func TestListBanks(t *testing.T) {
 	rec := httptest.NewRecorder()
 	New(&fakeUploader{}, testBanks, nil).Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/banks", nil))
