@@ -15,9 +15,9 @@ import (
 
 // loggedHandler returns a Handler over imp that logs JSON at level into the
 // returned buffer.
-func loggedHandler(up uploader, level slog.Level) (*Handler, *logtest.Buffer) {
+func loggedHandler(up uploadService, level slog.Level) (*Handler, *logtest.Buffer) {
 	logger, buf := logtest.NewLogger(level)
-	return New(up, logger), buf
+	return New(up, testBanks, logger), buf
 }
 
 // accessRecord returns the only INFO access record, failing otherwise.
@@ -123,7 +123,7 @@ func TestRequestID(t *testing.T) {
 
 // panicServer serves h's middleware around a mux with test routes, plus the
 // real upload route over up.
-func panicServer(t *testing.T, up uploader) (*httptest.Server, *logtest.Buffer) {
+func panicServer(t *testing.T, up uploadService) (*httptest.Server, *logtest.Buffer) {
 	t.Helper()
 	h, buf := loggedHandler(up, slog.LevelInfo)
 	mux := http.NewServeMux()

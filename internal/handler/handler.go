@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/KrivAlexey/personal_spends/internal/parser"
 	"github.com/KrivAlexey/personal_spends/internal/uploads"
@@ -23,23 +24,47 @@ type uploadResponse struct {
 	PendingSkipped int    `json:"pending_skipped"`
 }
 
-type uploader interface {
+type uploadService interface {
 	Upload(ctx context.Context, req uploads.Request) (uploads.Result, error)
+	List(ctx context.Context, limit int) ([]uploads.Record, error)
+}
+
+type bankLister interface {
+	Banks() []string
 }
 
 // Handler serves the REST API.
 type Handler struct {
-	up     uploader
+	up     uploadService
+	banks  bankLister
 	logger *slog.Logger
 }
 
-// New returns a Handler that runs uploads with up and logs to logger; a nil
-// logger discards.
-func New(up uploader, logger *slog.Logger) *Handler {
+// New returns a Handler that runs and lists uploads with up, lists bank
+// names from banks and logs to logger; a nil logger discards.
+func New(up uploadService, banks bankLister, logger *slog.Logger) *Handler {
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
-	return &Handler{up: up, logger: logger}
+	return &Handler{up: up, banks: banks, logger: logger}
+}
+
+// uploadEntry is one element of the GET /uploads list; counts are null
+// unless the upload is done.
+type uploadEntry struct {
+	UploadID       string    `json:"upload_id"`
+	Filename       string    `json:"filename"`
+	Bank           string    `json:"bank"`
+	UploadedAt     time.Time `json:"uploaded_at"`
+	Status         string    `json:"status"`
+	Imported       *int      `json:"imported"`
+	AlreadyKnown   *int      `json:"already_known"`
+	PendingSkipped *int      `json:"pending_skipped"`
+}
+
+// banksResponse is the JSON body of GET /banks.
+type banksResponse struct {
+	Banks []string `json:"banks"`
 }
 
 // openAPISpec is the OpenAPI document for every route in routes.
