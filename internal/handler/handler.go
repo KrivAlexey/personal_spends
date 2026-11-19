@@ -61,6 +61,16 @@ func (h *Handler) Routes() http.Handler {
 func (h *Handler) routes() map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
 		"POST /uploads/csv": h.uploadCSV,
+		"GET /openapi.yaml": h.openAPI,
+	}
+}
+
+// openAPI serves the embedded OpenAPI document.
+func (h *Handler) openAPI(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/yaml")
+	if _, err := w.Write(openAPISpec); err != nil {
+		h.logger.WarnContext(r.Context(), "write response failed",
+			"method", r.Method, "route", r.Pattern, "error", err)
 	}
 }
 

@@ -1,5 +1,84 @@
 openapi: 3.1.0
 info:
   title: personal_spends
-  version: "0"
-paths: {}
+  description: >-
+    REST API for importing bank exports and querying categorized expenses.
+    Behavior is specified in openspec/specs/rest-api.
+  version: "0.1.0"
+servers:
+  - url: http://localhost:8080
+    description: Local server (go run ./cmd/server)
+paths:
+  /uploads/csv:
+    post:
+      operationId: uploadCSV
+      summary: Import a bank export
+      description: >-
+        Imports the bank export sent as the raw request body. The bytes are
+        passed to the import unchanged, so the bank mapping's declared encoding
+        applies. Already-stored transactions are counted, not stored again.
+      parameters:
+        - name: bank
+          in: query
+          required: true
+          description: Name of the bank mapping, e.g. sparkasse.
+          schema:
+            type: string
+            minLength: 1
+      requestBody:
+        required: true
+        description: The bank export file, sent as-is.
+        content:
+          text/csv:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: Export imported.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadResult"
+        "400":
+          description: >-
+            Missing or empty bank parameter, empty or unreadable body, or no
+            bank mapping for bank. Nothing is imported.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "500":
+          description: >-
+            The import failed. The body does not contain the internal error.
+            Rows saved before the failure stay saved; re-uploading is safe.
+          content:
+            text/plain:
+              schema:
+                type: string
+  /openapi.yaml:
+    get:
+      operationId: getOpenAPI
+      summary: This OpenAPI document
+      responses:
+        "200":
+          description: The OpenAPI document.
+          content:
+            application/yaml:
+              schema:
+                type: string
+components:
+  schemas:
+    UploadResult:
+      type: object
+      required: [imported, already_known, pending_skipped]
+      properties:
+        imported:
+          type: integer
+          description: New transactions categorized and stored.
+        already_known:
+          type: integer
+          description: Transactions already stored by an earlier upload.
+        pending_skipped:
+          type: integer
+          description: Pending (not yet booked) transactions, skipped.
