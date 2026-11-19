@@ -36,68 +36,80 @@ var schemaSQL string
 // EnsureSchema creates the uploads table if it doesn't exist.
 func (p *PostgresRecords) EnsureSchema(ctx context.Context) error {
 	if _, err := p.db.Exec(ctx, schemaSQL); err != nil {
-		return fmt.Errorf("uploads: ensure schema: %w", err)
+		return fmt.Errorf("postgres: ensure uploads schema: %w", err)
 	}
 	return nil
 }
 
 // claimSQL inserts a processing record, or takes over an existing one that
-// failed or whose import started more than 15 minutes ago (Lambda's maximum
-// run time, so it can't still be running). The conflicting row is locked for
-// the upsert, so concurrent claims of one hash have a single winner. It
-// returns no row when the existing record is done or still processing.
+// failed or whose import started more than $4 seconds (staleAfter) ago; the
+// Service ends every import before that, so it can't still be running. The
+// conflicting row is locked for the upsert, so concurrent claims of one hash
+// have a single winner. It returns no row when the existing record is done or
+// still processing.
 const claimSQL = `
 INSERT INTO uploads (sha256, filename, bank) VALUES ($1, $2, $3)
 ON CONFLICT (sha256) DO UPDATE
    SET status = 'processing', filename = EXCLUDED.filename, bank = EXCLUDED.bank,
        started_at = now(), imported = NULL, already_known = NULL, pending_skipped = NULL
  WHERE uploads.status = 'failed'
-    OR (uploads.status = 'processing' AND uploads.started_at < now() - interval '15 minutes')
+    OR (uploads.status = 'processing' AND uploads.started_at < now() - make_interval(secs => $4))
 RETURNING ` + recordColumns
 
 const recordColumns = `id::text, sha256, filename, bank, uploaded_at, started_at, status, imported, already_known, pending_skipped`
 
 // Claim implements the claim described on recordStore.
 func (p *PostgresRecords) Claim(ctx context.Context, sha256, bank, filename string) (Record, bool, error) {
-	rec, err := scanRecord(p.db.QueryRow(ctx, claimSQL, sha256, filename, bank))
-	if err == nil {
-		return rec, true, nil
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
-		return Record{}, false, fmt.Errorf("uploads: claim: %w", err)
-	}
-	// The upsert only skips a row that exists, and rows are never deleted.
-	rec, err = p.bySHA256(ctx, sha256)
-	if err != nil {
-		return Record{}, false, err
+	var rec Record
+	// A second attempt covers the owner failing between our upsert and read:
+	// the record is then failed, and claimable.
+	for range 2 {
+		var err error
+		rec, err = scanRecord(p.db.QueryRow(ctx, claimSQL, sha256, filename, bank, staleAfter.Seconds()))
+		if err == nil {
+			return rec, true, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return Record{}, false, fmt.Errorf("postgres: claim upsert: %w", err)
+		}
+		// The upsert only skips a row that exists, and rows are never deleted.
+		if rec, err = p.bySHA256(ctx, sha256); err != nil {
+			return Record{}, false, err
+		}
+		if rec.Status != StatusFailed {
+			return rec, false, nil
+		}
 	}
 	return rec, false, nil
 }
 
-// Finish marks the upload done with counts.
+// Finish marks the claimed upload done with counts, or returns ErrClaimLost.
 func (p *PostgresRecords) Finish(ctx context.Context, claim Record, counts ingest.Result) error {
-	return p.setStatus(ctx, claim.ID, StatusDone, &counts)
+	return p.setStatus(ctx, claim, StatusDone, &counts)
 }
 
-// Fail marks the upload failed.
+// Fail marks the claimed upload failed, or returns ErrClaimLost.
 func (p *PostgresRecords) Fail(ctx context.Context, claim Record) error {
-	return p.setStatus(ctx, claim.ID, StatusFailed, nil)
+	return p.setStatus(ctx, claim, StatusFailed, nil)
 }
 
-// setStatus sets id's status, and its counts when counts isn't nil.
-func (p *PostgresRecords) setStatus(ctx context.Context, id string, status Status, counts *ingest.Result) error {
+// setStatus sets the status of claim's upload, and its counts when counts
+// isn't nil, only while that claim still holds it: still processing, from
+// the same start.
+func (p *PostgresRecords) setStatus(ctx context.Context, claim Record, status Status, counts *ingest.Result) error {
 	var imported, known, pending *int
 	if counts != nil {
 		imported, known, pending = &counts.Imported, &counts.AlreadyKnown, &counts.PendingSkipped
 	}
-	tag, err := p.db.Exec(ctx,
-		`UPDATE uploads SET status = $2, imported = $3, already_known = $4, pending_skipped = $5 WHERE id = $1`,
-		id, string(status), imported, known, pending)
+	tag, err := p.db.Exec(ctx, `
+UPDATE uploads SET status = $2, imported = $3, already_known = $4, pending_skipped = $5
+ WHERE id = $1 AND status = 'processing' AND started_at = $6`,
+		claim.ID, string(status), imported, known, pending, claim.StartedAt)
 	if err != nil {
-		return fmt.Errorf("uploads: set %s: %w", status, err)
+		return fmt.Errorf("postgres: set %s: %w", status, err)
 	}
 	if tag.RowsAffected() != 1 {
-		return fmt.Errorf("uploads: set %s: no upload %s", status, id)
+		return fmt.Errorf("postgres: set %s: %w", status, ErrClaimLost)
 	}
 	return nil
 }
@@ -106,7 +118,7 @@ func (p *PostgresRecords) setStatus(ctx context.Context, id string, status Statu
 func (p *PostgresRecords) bySHA256(ctx context.Context, sha256 string) (Record, error) {
 	rec, err := scanRecord(p.db.QueryRow(ctx, `SELECT `+recordColumns+` FROM uploads WHERE sha256 = $1`, sha256))
 	if err != nil {
-		return Record{}, fmt.Errorf("uploads: read record: %w", err)
+		return Record{}, fmt.Errorf("postgres: read upload record: %w", err)
 	}
 	return rec, nil
 }

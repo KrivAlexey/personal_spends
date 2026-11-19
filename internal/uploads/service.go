@@ -66,8 +66,8 @@ type Record struct {
 
 type recordStore interface {
 	// Claim records an upload of sha256 as processing and reports claimed if
-	// the caller now owns its import. If not, rec is the existing record,
-	// either done or still processing.
+	// the caller now owns its import. If not, rec is the existing record:
+	// done, still processing, or (rarely, after losing a race twice) failed.
 	Claim(ctx context.Context, sha256, bank, filename string) (rec Record, claimed bool, err error)
 	// Finish and Fail record the outcome of the claim, and return
 	// ErrClaimLost if the upload was claimed again since.
@@ -103,6 +103,10 @@ func New(records recordStore, blobs blobStore, imp importer, logger *slog.Logger
 // repeat may take it over (claimSQL uses the same interval).
 const staleAfter = 15 * time.Minute
 
+// importTimeout ends an import well before its claim goes stale, so a repeat
+// can never take over an upload that is still importing.
+const importTimeout = staleAfter - 2*time.Minute
+
 // finalizeTimeout bounds the status write after an import, which runs even
 // when the request is gone.
 const finalizeTimeout = 5 * time.Second
@@ -124,6 +128,7 @@ func (s *Service) Upload(ctx context.Context, req Request) (Result, error) {
 		if rec.Status == StatusDone {
 			return Result{UploadID: rec.ID, Result: rec.Counts}, nil
 		}
+		// processing, or failed after a lost race: a retry claims it.
 		return Result{UploadID: rec.ID}, ErrInProgress
 	}
 	s.logger.DebugContext(ctx, "upload claimed", "upload_id", rec.ID)
@@ -132,7 +137,9 @@ func (s *Service) Upload(ctx context.Context, req Request) (Result, error) {
 		return Result{UploadID: rec.ID}, s.fail(ctx, rec, fmt.Errorf("uploads: keep file: %w", err))
 	}
 
-	res, err := s.imp.Import(ctx, req.Bank, bytes.NewReader(req.Body))
+	ictx, cancelImport := context.WithTimeout(ctx, importTimeout)
+	res, err := s.imp.Import(ictx, req.Bank, bytes.NewReader(req.Body))
+	cancelImport()
 	if err != nil {
 		return Result{UploadID: rec.ID, Result: res}, s.fail(ctx, rec, fmt.Errorf("uploads: %w", err))
 	}

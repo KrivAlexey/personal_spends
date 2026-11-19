@@ -34,7 +34,8 @@ func (b *S3Blobs) Put(ctx context.Context, key string, body []byte) error {
 		ContentType: aws.String("text/csv"),
 	})
 	if err != nil {
-		return fmt.Errorf("s3 put %s: %w", key, err)
+		// No key: it holds the hash, and this error reaches the logs.
+		return fmt.Errorf("s3 put: %w", err)
 	}
 	return nil
 }

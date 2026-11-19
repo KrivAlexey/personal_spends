@@ -104,13 +104,18 @@ func (h *Handler) uploadCSV(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := h.up.Upload(r.Context(), uploads.Request{Bank: bank, Filename: r.URL.Query().Get("filename"), Body: body})
+	res, err := h.up.Upload(r.Context(), uploads.Request{
+		Bank:     bank,
+		Filename: r.URL.Query().Get("filename"),
+		Body:     body,
+	})
 	if errors.Is(err, uploads.ErrInProgress) {
 		h.reject(w, r, http.StatusConflict, bank, "upload in progress", "the same file is being imported")
 		return
 	}
 	if errors.Is(err, parser.ErrBankMappingNotFound) {
-		h.reject(w, r, http.StatusBadRequest, bank, "bank mapping not found", fmt.Sprintf("bank mapping %q not found", bank))
+		h.reject(w, r, http.StatusBadRequest, bank,
+			"bank mapping not found", fmt.Sprintf("bank mapping %q not found", bank))
 		return
 	}
 	if err != nil {

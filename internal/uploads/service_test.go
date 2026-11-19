@@ -25,9 +25,9 @@ type fakeRecords struct {
 	finishErr error
 	failErr   error
 
-	claims     []string // "sha256|bank|filename"
-	finished   map[string]ingest.Result
-	failed     []string
+	claims       []string // "sha256|bank|filename"
+	finished     map[string]ingest.Result
+	failed       []string
 	failCtxErr   error // ctx.Err() seen by Fail
 	finishCtxErr error // ctx.Err() seen by Finish
 }
