@@ -47,6 +47,7 @@ aws-credentials
 # Sensitive data - never commit real bank exports or receipt images
 data/
 samples/*.csv
+!samples/sparkasse_fake.csv
 samples/*.pdf
 samples/*.png
 samples/*.jpg

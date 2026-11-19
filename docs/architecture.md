@@ -13,15 +13,15 @@ This document describes the v1 target. What is built so far:
 | Area | State |
 |------|-------|
 | `internal/categories` | Built: `YamlCategoryProvider`, tested |
-| `internal/categorizer` | Built: `Claude`, tool-output validation tested; live API test skipped without `ANTHROPIC_API_KEY` |
+| `internal/categorizer` | Built: `Claude`, tool-output validation tested; live API test skipped without `ANTHROPIC_API_KEY`. `Keyword` (rule-based, no model) for offline local runs, tested |
 | `internal/parser` | Built: `Parser.ParseCSV` (pending filter, transaction IDs) + `FileMappingProvider`, tested |
 | `internal/storage` | Built: `PutExpense`, `SaveExpenses` (batched, retried), `KnownIDs`, tested. Not yet: `QueryExpenses` |
 | `internal/ingest` | Built: `Importer.Import` (serial loop, skips known rows), tested with fakes |
 | `internal/handler` | Built: `POST /uploads/csv` ([0012](decisions/0012-raw-csv-upload-body.md)), request ID + access log + panic recovery middleware, tested with a fake importer. Not yet: other endpoints, `X-API-Key` middleware |
 | `internal/logging` | Built: `New` (level/format), context attributes (`request_id`, `batch`, `batches`), tested ([0013](decisions/0013-structured-logging-with-slog.md)) |
-| `cmd/server` | Built: wires the CSV upload path, serves `localhost:8080`, graceful shutdown on SIGINT/SIGTERM. Checked by running it |
+| `cmd/server` | Built: wires the CSV upload path, serves `localhost:8080`, graceful shutdown on SIGINT/SIGTERM. `CATEGORIZER=fake` + DynamoDB Local run it offline (README). Checked by running it |
 | `internal/mcp`, `cmd/lambda`, `cmd/mcp` | Not started |
-| Terraform | DynamoDB table with GSI1 only. Not yet: Lambda, API Gateway |
+| Terraform | DynamoDB table with GSI1 only; workspace `local` creates it in DynamoDB Local. Not yet: Lambda, API Gateway |
 | Configuration (below) | Read by `cmd/server`, except `API_KEY` (no auth middleware yet) and `WORKER_POOL_SIZE` (step 2) |
 
 ---
@@ -144,7 +144,7 @@ type BankMappingProvider interface {
 
 | Interface | v1 | Later (backlog) |
 |-----------|----|-----------------|
-| `Categorizer` | `Claude` (Haiku) | `BedrockCategorizer` (Llama/Mistral), `VLLMCategorizer` (on-demand GPU) |
+| `Categorizer` | `Claude` (Haiku); `Keyword` for offline local runs | `BedrockCategorizer` (Llama/Mistral), `VLLMCategorizer` (on-demand GPU) |
 | `CategoryProvider` | `YamlCategoryProvider` | `PostgresProvider` (RDS + RDS Proxy) |
 | `BankMappingProvider` | `FileMappingProvider` (`bank_mappings.yaml`) | Runtime detection with Claude |
 
@@ -256,10 +256,12 @@ collect from results chan ──► storage.SaveExpenses()
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `ANTHROPIC_API_KEY` | Anthropic API key | required |
+| `ANTHROPIC_API_KEY` | Anthropic API key | required unless `CATEGORIZER=fake` |
+| `CATEGORIZER` | `claude`, or `fake` for the rule-based `Keyword` categorizer (no model, local only) | `claude` |
 | `API_KEY` | API key for endpoint auth | required |
 | `DYNAMODB_TABLE` | Expenses table name | `personal-spends-expenses` |
 | `AWS_REGION` | AWS region | `eu-central-1` |
+| `AWS_ENDPOINT_URL_DYNAMODB` | DynamoDB endpoint override, read by the AWS SDK; `http://localhost:8000` for DynamoDB Local | unset (real AWS) |
 | `BATCH_SIZE` | Transactions per Claude API call | `50` |
 | `WORKER_POOL_SIZE` | Max concurrent categorizer goroutines (step 2) | `5` |
 | `LOG_LEVEL` | `debug`, `info`, `warn` or `error` (case-insensitive) | `info` |

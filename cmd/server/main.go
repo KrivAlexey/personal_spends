@@ -49,10 +49,6 @@ func run(ctx context.Context) error {
 		return err
 	}
 
-	apiKey := os.Getenv("ANTHROPIC_API_KEY")
-	if apiKey == "" {
-		return errors.New("ANTHROPIC_API_KEY is required")
-	}
 	batchSize := 0 // ingest.DefaultBatchSize
 	if v := os.Getenv("BATCH_SIZE"); v != "" {
 		if batchSize, err = strconv.Atoi(v); err != nil || batchSize <= 0 {
@@ -60,17 +56,9 @@ func run(ctx context.Context) error {
 		}
 	}
 
-	categoryProvider, err := categories.NewYamlCategoryProvider(categoriesFile)
+	cat, err := newCategorizer(ctx, logger)
 	if err != nil {
 		return err
-	}
-	cats, err := categoryProvider.List(ctx)
-	if err != nil {
-		return err
-	}
-	names := make([]string, len(cats))
-	for i, c := range cats {
-		names[i] = c.Name
 	}
 
 	mappings, err := parser.NewFileMappingProvider(ctx, mappingsFile)
@@ -84,7 +72,7 @@ func run(ctx context.Context) error {
 	}
 	store := storage.NewStore(dynamodb.NewFromConfig(awsCfg), envOr("DYNAMODB_TABLE", "personal-spends-expenses"), logger)
 
-	imp := ingest.NewImporter(parser.NewParser(mappings), categorizer.NewClaude(apiKey, names, logger), store, batchSize, logger)
+	imp := ingest.NewImporter(parser.NewParser(mappings), cat, store, batchSize, logger)
 
 	// No WriteTimeout: an upload waits on Claude for every batch.
 	srv := &http.Server{
@@ -112,6 +100,46 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("shutting down: %w", err)
 	}
 	return nil
+}
+
+// fakeRules match the merchants in samples/, for CATEGORIZER=fake.
+var fakeRules = []categorizer.KeywordRule{
+	{Keyword: "rewe", Category: "groceries"},
+	{Keyword: "edeka", Category: "groceries"},
+	{Keyword: "netflix", Category: "streaming_subscriptions"},
+	{Keyword: "tankstelle", Category: "fuel"},
+	{Keyword: "deutsche bahn", Category: "transportation_public"},
+	{Keyword: "miete", Category: "housing_rent"},
+}
+
+// newCategorizer returns the Claude categorizer, or with CATEGORIZER=fake a
+// Keyword one that calls no model and needs no API key.
+func newCategorizer(ctx context.Context, logger *slog.Logger) (categorizer.Categorizer, error) {
+	switch v := os.Getenv("CATEGORIZER"); v {
+	case "fake":
+		return categorizer.NewKeyword(fakeRules, logger), nil
+	case "", "claude":
+	default:
+		return nil, fmt.Errorf("invalid CATEGORIZER %q", v)
+	}
+
+	apiKey := os.Getenv("ANTHROPIC_API_KEY")
+	if apiKey == "" {
+		return nil, errors.New("ANTHROPIC_API_KEY is required")
+	}
+	categoryProvider, err := categories.NewYamlCategoryProvider(categoriesFile)
+	if err != nil {
+		return nil, err
+	}
+	cats, err := categoryProvider.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, len(cats))
+	for i, c := range cats {
+		names[i] = c.Name
+	}
+	return categorizer.NewClaude(apiKey, names, logger), nil
 }
 
 func envOr(key, fallback string) string {

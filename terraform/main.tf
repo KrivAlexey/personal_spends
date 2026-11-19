@@ -13,8 +13,26 @@ terraform {
   }
 }
 
+# The "local" workspace targets DynamoDB Local (localhost:8000) with its own
+# state; every other workspace targets real AWS. Tying the endpoint to the
+# workspace means emulator settings can never be applied with the real state.
+locals {
+  emulator = terraform.workspace == "local"
+}
+
 provider "aws" {
   region = var.aws_region
+
+  endpoints {
+    dynamodb = local.emulator ? "http://localhost:8000" : null
+  }
+
+  # DynamoDB Local accepts any credentials and has no STS or account to check.
+  access_key                  = local.emulator ? "local" : null
+  secret_key                  = local.emulator ? "local" : null
+  skip_credentials_validation = local.emulator
+  skip_requesting_account_id  = local.emulator
+  skip_metadata_api_check     = local.emulator
 }
 
 variable "aws_region" {
