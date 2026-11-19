@@ -46,9 +46,9 @@
   - the browser console shows no CSP violations
 
   Record what was seen for the PR
-- [ ] 5.3 ADR `0016-embedded-static-web-ui.md`: embedded HTML/CSS/vanilla JS, no toolchain, explicit routes, CSP, when to revisit (framework, separate hosting, auth via `X-API-Key`); verify it is linked from `docs/architecture.md`
-- [ ] 5.4 Update `docs/architecture.md`: Implementation Status (handler, uploads, parser), API table (`GET /uploads`, `GET /banks`, page routes), a short Web UI section, and the system diagram's browser entry. Update the README ("open http://localhost:8080/" in Run locally and Offline). Verify each section against the code
-- [ ] 5.5 Run `go build ./... && go vet ./... && go test ./...`, the integration tests with `TEST_DATABASE_URL`/`TEST_S3_ENDPOINT`, and `openspec validate add-uploads-web-ui --strict`; verify all pass
+- [x] 5.3 ADR `0016-embedded-static-web-ui.md`: embedded HTML/CSS/vanilla JS, no toolchain, explicit routes, CSP, when to revisit (framework, separate hosting, auth via `X-API-Key`); verify it is linked from `docs/architecture.md`
+- [x] 5.4 Update `docs/architecture.md`: Implementation Status (handler, uploads, parser), API table (`GET /uploads`, `GET /banks`, page routes), a short Web UI section, and the system diagram's browser entry. Update the README ("open http://localhost:8080/" in Run locally and Offline). Verify each section against the code
+- [x] 5.5 Run `go build ./... && go vet ./... && go test ./...`, the integration tests with `TEST_DATABASE_URL`/`TEST_S3_ENDPOINT`, and `openspec validate add-uploads-web-ui --strict`; verify all pass
 
 ## 6. Review
 
