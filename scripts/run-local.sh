@@ -3,7 +3,8 @@
 # The env file is sourced as shell code: quote values with spaces.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
-env_file="$(realpath -m -- "${1:-$root/.env.local}")"  # $1 is relative to the caller's cwd
+env_file="${1:-$root/.env.local}"
+[[ "$env_file" = /* ]] || env_file="$PWD/$env_file"  # $1 is relative to the caller's cwd
 [[ -f "$env_file" ]] || { echo "missing $env_file" >&2; exit 1; }
 set -a; . "$env_file"; set +a
 cd "$root"
