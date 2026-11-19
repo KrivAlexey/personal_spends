@@ -2,7 +2,9 @@
 
 ## Purpose
 Defines the HTTP contract of the REST API that clients (curl, the MCP server) rely on: request shapes, response bodies and status codes.
+
 ## Requirements
+
 ### Requirement: Upload a bank export
 The system SHALL accept `POST /uploads/csv?bank=<bankName>` with the bank export as the raw request body, import it as specified by `csv-import`, and respond `200` with a JSON body (`Content-Type: application/json`) holding the integer fields `imported`, `already_known` and `pending_skipped`. All three fields SHALL be present, including when their value is 0.
 
@@ -54,3 +56,14 @@ The system SHALL respond `500` when an upload fails for any reason not covered b
 #### Scenario: Storage failure
 - **WHEN** storing the categorized expenses fails with an error naming the DynamoDB table
 - **THEN** the response is `500` and its body does not contain the table name
+
+### Requirement: Serve the OpenAPI document
+The system SHALL respond to `GET /openapi.yaml` with `200`, `Content-Type: application/yaml` and an OpenAPI 3.1 document that describes every route the server serves, including `GET /openapi.yaml` itself, and no route it does not serve.
+
+#### Scenario: Fetch the document
+- **WHEN** a client sends `GET /openapi.yaml`
+- **THEN** the response is `200` with `Content-Type: application/yaml` and an OpenAPI 3.1 document listing `POST /uploads/csv` and `GET /openapi.yaml`
+
+#### Scenario: Wrong method
+- **WHEN** a client sends `POST /openapi.yaml`
+- **THEN** the response is `405`

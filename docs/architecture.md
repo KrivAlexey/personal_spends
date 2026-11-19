@@ -17,7 +17,7 @@ This document describes the v1 target. What is built so far:
 | `internal/parser` | Built: `Parser.ParseCSV` (pending filter, transaction IDs) + `FileMappingProvider`, tested |
 | `internal/storage` | Built: `PutExpense`, `SaveExpenses` (batched, retried), `KnownIDs`, tested. Not yet: `QueryExpenses` |
 | `internal/ingest` | Built: `Importer.Import` (serial loop, skips known rows), tested with fakes |
-| `internal/handler` | Built: `POST /uploads/csv` ([0012](decisions/0012-raw-csv-upload-body.md)), request ID + access log + panic recovery middleware, tested with a fake importer. Not yet: other endpoints, `X-API-Key` middleware |
+| `internal/handler` | Built: `POST /uploads/csv` ([0012](decisions/0012-raw-csv-upload-body.md)), `GET /openapi.yaml` ([0014](decisions/0014-hand-written-openapi-spec.md)), request ID + access log + panic recovery middleware, tested with a fake importer. Not yet: other endpoints, `X-API-Key` middleware |
 | `internal/logging` | Built: `New` (level/format), context attributes (`request_id`, `batch`, `batches`), tested ([0013](decisions/0013-structured-logging-with-slog.md)) |
 | `cmd/server` | Built: wires the CSV upload path, serves `localhost:8080`, graceful shutdown on SIGINT/SIGTERM. `CATEGORIZER=fake` + DynamoDB Local run it offline (README). Checked by running it |
 | `internal/mcp`, `cmd/lambda`, `cmd/mcp` | Not started |
@@ -196,7 +196,7 @@ Enables: "show all grocery expenses in April", "sum transport costs for Q1".
 
 ## API Endpoints
 
-All endpoints require `X-API-Key` header. Built endpoints are specified in [`openspec/specs/rest-api`](../openspec/specs/rest-api/spec.md).
+All endpoints require `X-API-Key` header. Built endpoints are specified in [`openspec/specs/rest-api`](../openspec/specs/rest-api/spec.md) and described for clients in the OpenAPI 3.1 document [`internal/handler/openapi.yaml`](../internal/handler/openapi.yaml), served at `GET /openapi.yaml`; a test fails when it and the registered routes differ ([0014](decisions/0014-hand-written-openapi-spec.md)).
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -205,6 +205,7 @@ All endpoints require `X-API-Key` header. Built endpoints are specified in [`ope
 | `POST` | `/expenses` | Add a single expense manually (JSON body with the expense fields) |
 | `GET` | `/expenses/summary` | Spending totals grouped by category (`from`, `to` params) |
 | `GET` | `/categories` | List configured categories |
+| `GET` | `/openapi.yaml` | This API's OpenAPI 3.1 document |
 
 `min_amount` / `max_amount` filter the date- or category-keyed query result (a DynamoDB filter expression), so they never trigger a full scan.
 
