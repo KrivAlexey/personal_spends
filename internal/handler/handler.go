@@ -14,6 +14,7 @@ import (
 
 	"github.com/KrivAlexey/personal_spends/internal/ingest"
 	"github.com/KrivAlexey/personal_spends/internal/parser"
+	"github.com/KrivAlexey/personal_spends/internal/uploads"
 )
 
 // uploadResponse is the JSON body of a successful POST /uploads/csv.
@@ -23,23 +24,23 @@ type uploadResponse struct {
 	PendingSkipped int `json:"pending_skipped"`
 }
 
-type importer interface {
-	Import(ctx context.Context, bankName string, r io.Reader) (ingest.Result, error)
+type uploader interface {
+	Upload(ctx context.Context, req uploads.Request) (uploads.Result, error)
 }
 
 // Handler serves the REST API.
 type Handler struct {
-	imp    importer
+	up     uploader
 	logger *slog.Logger
 }
 
-// New returns a Handler that imports uploads with imp and logs to logger; a
-// nil logger discards.
-func New(imp importer, logger *slog.Logger) *Handler {
+// New returns a Handler that runs uploads with up and logs to logger; a nil
+// logger discards.
+func New(up uploader, logger *slog.Logger) *Handler {
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
-	return &Handler{imp: imp, logger: logger}
+	return &Handler{up: up, logger: logger}
 }
 
 // openAPISpec is the OpenAPI document for every route in routes.
@@ -94,7 +95,9 @@ func (h *Handler) uploadCSV(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := h.imp.Import(r.Context(), bank, br)
+	all, _ := io.ReadAll(br)
+	ures, err := h.up.Upload(r.Context(), uploads.Request{Bank: bank, Body: all})
+	res := ures.Result
 	if err != nil && body.err != nil {
 		h.reject(w, r, bank, "unreadable body", "reading request body failed")
 		return

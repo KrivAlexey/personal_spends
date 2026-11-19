@@ -22,32 +22,37 @@ import (
 	"github.com/KrivAlexey/personal_spends/internal/logging/logtest"
 	"github.com/KrivAlexey/personal_spends/internal/parser"
 	"github.com/KrivAlexey/personal_spends/internal/storage"
+	"github.com/KrivAlexey/personal_spends/internal/uploads"
 	"github.com/anthropics/anthropic-sdk-go/option"
 )
 
-type fakeImporter struct {
+type fakeUploader struct {
+	id  string // UploadID returned; "" means "u1"
 	res ingest.Result
 	err error
-	// onImport, when set, runs after the body is read and its error replaces err.
-	onImport func(ctx context.Context) error
+	// onUpload, when set, runs instead of returning err.
+	onUpload func(ctx context.Context) error
 
-	called  bool
-	gotBank string
-	gotBody string
+	called      bool
+	gotBank     string
+	gotFilename string
+	gotBody     string
 }
 
-func (f *fakeImporter) Import(ctx context.Context, bankName string, r io.Reader) (ingest.Result, error) {
+func (f *fakeUploader) Upload(ctx context.Context, req uploads.Request) (uploads.Result, error) {
 	f.called = true
-	f.gotBank = bankName
-	b, err := io.ReadAll(r)
-	if err != nil {
-		return ingest.Result{}, err
+	f.gotBank = req.Bank
+	f.gotFilename = req.Filename
+	f.gotBody = string(req.Body)
+	id := f.id
+	if id == "" {
+		id = "u1"
 	}
-	f.gotBody = string(b)
-	if f.onImport != nil {
-		return f.res, f.onImport(ctx)
+	res := uploads.Result{UploadID: id, Result: f.res}
+	if f.onUpload != nil {
+		return res, f.onUpload(ctx)
 	}
-	return f.res, f.err
+	return res, f.err
 }
 
 func uploadRequest(target, body string) *http.Request {
@@ -63,56 +68,56 @@ func TestUploadCSV(t *testing.T) {
 		name       string
 		target     string
 		body       string
-		imp        *fakeImporter
+		imp        *fakeUploader
 		wantStatus int
 		wantCalled bool
-		wantJSON   map[string]int // nil: body not checked as JSON
+		wantJSON   map[string]any // nil: body not checked as JSON
 		bodyLacks  string         // must not appear in the response body
 	}{
 		{
 			name:       "imports and reports counts",
 			target:     "/uploads/csv?bank=sparkasse",
 			body:       csvBody,
-			imp:        &fakeImporter{res: ingest.Result{Imported: 5, AlreadyKnown: 3, PendingSkipped: 2}},
+			imp:        &fakeUploader{res: ingest.Result{Imported: 5, AlreadyKnown: 3, PendingSkipped: 2}},
 			wantStatus: http.StatusOK,
 			wantCalled: true,
-			wantJSON:   map[string]int{"imported": 5, "already_known": 3, "pending_skipped": 2},
+			wantJSON:   map[string]any{"upload_id": "u1", "imported": 5.0, "already_known": 3.0, "pending_skipped": 2.0},
 		},
 		{
 			name:       "nothing new still reports zeros",
 			target:     "/uploads/csv?bank=sparkasse",
 			body:       csvBody,
-			imp:        &fakeImporter{res: ingest.Result{AlreadyKnown: 1}},
+			imp:        &fakeUploader{res: ingest.Result{AlreadyKnown: 1}},
 			wantStatus: http.StatusOK,
 			wantCalled: true,
-			wantJSON:   map[string]int{"imported": 0, "already_known": 1, "pending_skipped": 0},
+			wantJSON:   map[string]any{"upload_id": "u1", "imported": 0.0, "already_known": 1.0, "pending_skipped": 0.0},
 		},
 		{
 			name:       "missing bank parameter",
 			target:     "/uploads/csv",
 			body:       csvBody,
-			imp:        &fakeImporter{},
+			imp:        &fakeUploader{},
 			wantStatus: http.StatusBadRequest,
 		},
 		{
 			name:       "empty bank parameter",
 			target:     "/uploads/csv?bank=",
 			body:       csvBody,
-			imp:        &fakeImporter{},
+			imp:        &fakeUploader{},
 			wantStatus: http.StatusBadRequest,
 		},
 		{
 			name:       "empty body",
 			target:     "/uploads/csv?bank=sparkasse",
 			body:       "",
-			imp:        &fakeImporter{},
+			imp:        &fakeUploader{},
 			wantStatus: http.StatusBadRequest,
 		},
 		{
 			name:   "unknown bank is a client error",
 			target: "/uploads/csv?bank=nobank",
 			body:   csvBody,
-			imp: &fakeImporter{err: fmt.Errorf("ingest: parse nobank export: parser: csv schema is not found for bank: nobank: %w",
+			imp: &fakeUploader{err: fmt.Errorf("ingest: parse nobank export: parser: csv schema is not found for bank: nobank: %w",
 				parser.ErrBankMappingNotFound)},
 			wantStatus: http.StatusBadRequest,
 			wantCalled: true,
@@ -122,13 +127,30 @@ func TestUploadCSV(t *testing.T) {
 			target: "/uploads/csv?bank=sparkasse",
 			body:   csvBody,
 			// Import returns the partial result of the batches saved before the failure.
-			imp: &fakeImporter{
+			imp: &fakeUploader{
 				res: ingest.Result{Imported: 50},
 				err: errors.New("ingest: save: dynamodb: secret-table-name throttled"),
 			},
 			wantStatus: http.StatusInternalServerError,
 			wantCalled: true,
 			bodyLacks:  "secret-table-name",
+		},
+		{
+			name:       "repeat of a done upload returns its id and counts",
+			target:     "/uploads/csv?bank=sparkasse",
+			body:       csvBody,
+			imp:        &fakeUploader{id: "u0", res: ingest.Result{Imported: 7, PendingSkipped: 1}},
+			wantStatus: http.StatusOK,
+			wantCalled: true,
+			wantJSON:   map[string]any{"upload_id": "u0", "imported": 7.0, "already_known": 0.0, "pending_skipped": 1.0},
+		},
+		{
+			name:       "same file in progress is a conflict",
+			target:     "/uploads/csv?bank=sparkasse",
+			body:       csvBody,
+			imp:        &fakeUploader{err: fmt.Errorf("uploads: %w", uploads.ErrInProgress)},
+			wantStatus: http.StatusConflict,
+			wantCalled: true,
 		},
 	}
 
@@ -141,7 +163,7 @@ func TestUploadCSV(t *testing.T) {
 				t.Fatalf("status = %d, want %d (body: %q)", rec.Code, tt.wantStatus, rec.Body.String())
 			}
 			if tt.imp.called != tt.wantCalled {
-				t.Errorf("importer called = %v, want %v", tt.imp.called, tt.wantCalled)
+				t.Errorf("uploader called = %v, want %v", tt.imp.called, tt.wantCalled)
 			}
 			if tt.bodyLacks != "" && strings.Contains(rec.Body.String(), tt.bodyLacks) {
 				t.Errorf("body leaks %q: %q", tt.bodyLacks, rec.Body.String())
@@ -156,7 +178,7 @@ func TestUploadCSV(t *testing.T) {
 			if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
 				t.Errorf("Content-Type = %q, want application/json", ct)
 			}
-			var got map[string]int
+			var got map[string]any
 			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 				t.Fatalf("decode body %q: %v", rec.Body.String(), err)
 			}
@@ -165,7 +187,7 @@ func TestUploadCSV(t *testing.T) {
 				if !ok {
 					t.Errorf("body lacks key %q: %v", k, got)
 				} else if v != want {
-					t.Errorf("%s = %d, want %d", k, v, want)
+					t.Errorf("%s = %v, want %v", k, v, want)
 				}
 			}
 		})
@@ -174,17 +196,59 @@ func TestUploadCSV(t *testing.T) {
 
 // The body must reach the importer byte for byte: Sparkasse exports are
 // ISO-8859-1 and the parser decodes them, not the handler.
-func TestUploadCSV_PassesBankAndBodyToImporter(t *testing.T) {
+func TestUploadCSV_PassesRequestToUploader(t *testing.T) {
 	body := "Verwendungszweck\nGrundpreis f\xfcr Kontof\xfchrung\n"
-	imp := &fakeImporter{}
-	rec := httptest.NewRecorder()
-	New(imp, nil).Routes().ServeHTTP(rec, uploadRequest("/uploads/csv?bank=sparkasse", body))
-
-	if imp.gotBank != "sparkasse" {
-		t.Errorf("bank = %q, want %q", imp.gotBank, "sparkasse")
+	tests := []struct {
+		name         string
+		target       string
+		wantFilename string
+	}{
+		{name: "with filename", target: "/uploads/csv?bank=sparkasse&filename=statement+2026.csv", wantFilename: "statement 2026.csv"},
+		{name: "without filename", target: "/uploads/csv?bank=sparkasse", wantFilename: ""},
 	}
-	if imp.gotBody != body {
-		t.Errorf("body = %q, want %q", imp.gotBody, body)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			imp := &fakeUploader{}
+			rec := httptest.NewRecorder()
+			New(imp, nil).Routes().ServeHTTP(rec, uploadRequest(tt.target, body))
+
+			if imp.gotBank != "sparkasse" || imp.gotFilename != tt.wantFilename {
+				t.Errorf("bank, filename = %q, %q; want sparkasse, %q", imp.gotBank, imp.gotFilename, tt.wantFilename)
+			}
+			if imp.gotBody != body {
+				t.Errorf("body = %q, want %q", imp.gotBody, body)
+			}
+		})
+	}
+}
+
+// The body is held in memory to hash it, so it is capped at maxUploadBytes.
+func TestUploadCSV_BodySizeLimit(t *testing.T) {
+	tests := []struct {
+		name       string
+		size       int
+		wantStatus int
+		wantCalled bool
+	}{
+		{name: "at the limit", size: 10 << 20, wantStatus: http.StatusOK, wantCalled: true},
+		{name: "one byte over", size: 10<<20 + 1, wantStatus: http.StatusRequestEntityTooLarge},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			imp := &fakeUploader{}
+			rec := httptest.NewRecorder()
+			New(imp, nil).Routes().ServeHTTP(rec, uploadRequest("/uploads/csv?bank=sparkasse", strings.Repeat("a", tt.size)))
+
+			if rec.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d", rec.Code, tt.wantStatus)
+			}
+			if imp.called != tt.wantCalled {
+				t.Errorf("uploader called = %v, want %v", imp.called, tt.wantCalled)
+			}
+			if tt.wantCalled && len(imp.gotBody) != tt.size {
+				t.Errorf("uploader got %d bytes, want %d", len(imp.gotBody), tt.size)
+			}
+		})
 	}
 }
 
@@ -193,26 +257,25 @@ type errReader struct{}
 func (errReader) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
 
 // A body that fails to read (client dropped mid-upload) is a client error,
-// whether it fails on the first byte or partway through.
+// whether it fails on the first byte or partway through. The whole body is
+// read before the upload starts, so a cut-off body never reaches it.
 func TestUploadCSV_UnreadableBody(t *testing.T) {
 	tests := []struct {
-		name       string
-		body       io.Reader
-		wantCalled bool
+		name string
+		body io.Reader
 	}{
 		{
 			name: "fails before the first byte",
 			body: errReader{},
 		},
 		{
-			name:       "fails mid-body",
-			body:       io.MultiReader(strings.NewReader("Buchungstag;Be"), errReader{}),
-			wantCalled: true,
+			name: "fails mid-body",
+			body: io.MultiReader(strings.NewReader("Buchungstag;Be"), errReader{}),
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			imp := &fakeImporter{}
+			imp := &fakeUploader{}
 			rec := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodPost, "/uploads/csv?bank=sparkasse", tt.body)
 			New(imp, nil).Routes().ServeHTTP(rec, req)
@@ -220,8 +283,8 @@ func TestUploadCSV_UnreadableBody(t *testing.T) {
 			if rec.Code != http.StatusBadRequest {
 				t.Errorf("status = %d, want %d (body: %q)", rec.Code, http.StatusBadRequest, rec.Body.String())
 			}
-			if imp.called != tt.wantCalled {
-				t.Errorf("importer called = %v, want %v", imp.called, tt.wantCalled)
+			if imp.called {
+				t.Error("uploader called, want not")
 			}
 		})
 	}
@@ -235,13 +298,13 @@ func TestUploadCSV_ErrorRecord(t *testing.T) {
 	tests := []struct {
 		name      string
 		ctx       func() (context.Context, context.CancelFunc)
-		onImport  func(ctx context.Context, cancel context.CancelFunc) error
+		onUpload  func(ctx context.Context, cancel context.CancelFunc) error
 		wantLevel string
 		wantErr   string
 	}{
 		{
 			name: "storage failure",
-			onImport: func(context.Context, context.CancelFunc) error {
+			onUpload: func(context.Context, context.CancelFunc) error {
 				return errors.New("ingest: save: write chunk of expenses: batch write item: throttled")
 			},
 			wantLevel: "ERROR",
@@ -249,7 +312,7 @@ func TestUploadCSV_ErrorRecord(t *testing.T) {
 		},
 		{
 			name: "categorizer failure",
-			onImport: func(context.Context, context.CancelFunc) error {
+			onUpload: func(context.Context, context.CancelFunc) error {
 				return errors.New("ingest: categorize: categorizer: create message: 529 overloaded")
 			},
 			wantLevel: "ERROR",
@@ -257,7 +320,7 @@ func TestUploadCSV_ErrorRecord(t *testing.T) {
 		},
 		{
 			name: "client disconnects during categorization",
-			onImport: func(ctx context.Context, cancel context.CancelFunc) error {
+			onUpload: func(ctx context.Context, cancel context.CancelFunc) error {
 				cancel()
 				return fmt.Errorf("ingest: categorize: categorizer: create message: %w", ctx.Err())
 			},
@@ -266,7 +329,7 @@ func TestUploadCSV_ErrorRecord(t *testing.T) {
 		},
 		{
 			name: "timeout stays an error",
-			onImport: func(context.Context, context.CancelFunc) error {
+			onUpload: func(context.Context, context.CancelFunc) error {
 				return fmt.Errorf("ingest: categorize: %w", context.DeadlineExceeded)
 			},
 			wantLevel: "ERROR",
@@ -274,7 +337,7 @@ func TestUploadCSV_ErrorRecord(t *testing.T) {
 		},
 		{
 			name: "internal cancellation with the request still live",
-			onImport: func(context.Context, context.CancelFunc) error {
+			onUpload: func(context.Context, context.CancelFunc) error {
 				return fmt.Errorf("ingest: categorize: %w", context.Canceled)
 			},
 			wantLevel: "ERROR",
@@ -285,7 +348,7 @@ func TestUploadCSV_ErrorRecord(t *testing.T) {
 			ctx: func() (context.Context, context.CancelFunc) {
 				return context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
 			},
-			onImport: func(context.Context, context.CancelFunc) error {
+			onUpload: func(context.Context, context.CancelFunc) error {
 				return fmt.Errorf("ingest: categorize: %w", context.Canceled)
 			},
 			wantLevel: "ERROR",
@@ -300,9 +363,9 @@ func TestUploadCSV_ErrorRecord(t *testing.T) {
 			}
 			ctx, cancel := newCtx()
 			defer cancel()
-			imp := &fakeImporter{
+			imp := &fakeUploader{
 				res:      ingest.Result{Imported: 50, AlreadyKnown: 3, PendingSkipped: 2},
-				onImport: func(ctx context.Context) error { return tt.onImport(ctx, cancel) },
+				onUpload: func(ctx context.Context) error { return tt.onUpload(ctx, cancel) },
 			}
 			h, buf := loggedHandler(imp, slog.LevelInfo)
 			rec := httptest.NewRecorder()
@@ -322,7 +385,7 @@ func TestUploadCSV_ErrorRecord(t *testing.T) {
 				t.Fatalf("want exactly one %s record, got:\n%s", tt.wantLevel, buf)
 			}
 			assertFields(t, failures[0], map[string]any{
-				"method": "POST", "route": "POST /uploads/csv", "bank": "sparkasse",
+				"method": "POST", "route": "POST /uploads/csv", "bank": "sparkasse", "upload_id": "u1",
 				"imported": 50.0, "already_known": 3.0, "pending_skipped": 2.0,
 			})
 			if e, _ := failures[0]["error"].(string); !strings.Contains(e, tt.wantErr) {
@@ -362,7 +425,7 @@ func TestUploadCSV_RejectionRecord(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h, buf := loggedHandler(&fakeImporter{err: tt.err}, slog.LevelInfo)
+			h, buf := loggedHandler(&fakeUploader{err: tt.err}, slog.LevelInfo)
 			rec := httptest.NewRecorder()
 			h.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, tt.target, tt.body))
 
@@ -386,6 +449,45 @@ func TestUploadCSV_RejectionRecord(t *testing.T) {
 	}
 }
 
+// 409 and 413 are rejections too: one WARN with a fixed reason, no ERROR.
+func TestUploadCSV_ConflictAndTooLargeRecords(t *testing.T) {
+	tests := []struct {
+		name       string
+		body       string
+		err        error
+		wantStatus int
+		wantReason string
+	}{
+		{
+			name: "upload in progress", body: csvBody, err: uploads.ErrInProgress,
+			wantStatus: http.StatusConflict, wantReason: "upload in progress",
+		},
+		{
+			name: "body too large", body: strings.Repeat("a", 10<<20+1),
+			wantStatus: http.StatusRequestEntityTooLarge, wantReason: "body too large",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, buf := loggedHandler(&fakeUploader{err: tt.err}, slog.LevelInfo)
+			rec := httptest.NewRecorder()
+			h.Routes().ServeHTTP(rec, uploadRequest(bankTarget("sparkasse"), tt.body))
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d", rec.Code, tt.wantStatus)
+			}
+			recs := logtest.Records(t, buf)
+			warns := logtest.Filter(recs, "WARN", "")
+			if len(warns) != 1 || len(logtest.Filter(recs, "ERROR", "")) != 0 {
+				t.Fatalf("want exactly one WARN and no ERROR, got:\n%s", buf)
+			}
+			assertFields(t, warns[0], map[string]any{
+				"method": "POST", "route": "POST /uploads/csv", "bank": "sparkasse", "reason": tt.wantReason,
+			})
+		})
+	}
+}
+
 // A bank value can't forge a record: it stays escaped inside one field.
 func TestUploadCSV_BankCannotForgeRecord(t *testing.T) {
 	for _, format := range []string{"text", "json"} {
@@ -395,7 +497,7 @@ func TestUploadCSV_BankCannotForgeRecord(t *testing.T) {
 			if err != nil {
 				t.Fatalf("logging.New: %v", err)
 			}
-			imp := &fakeImporter{err: fmt.Errorf("ingest: %w", parser.ErrBankMappingNotFound)}
+			imp := &fakeUploader{err: fmt.Errorf("ingest: %w", parser.ErrBankMappingNotFound)}
 			New(imp, logger).Routes().ServeHTTP(httptest.NewRecorder(),
 				uploadRequest(bankTarget("x\nlevel=ERROR msg=forged"), csvBody))
 
@@ -420,7 +522,7 @@ func TestUploadCSV_BankCannotForgeRecord(t *testing.T) {
 }
 
 func TestUploadCSV_DefaultLevelStaysQuiet(t *testing.T) {
-	h, buf := loggedHandler(&fakeImporter{res: ingest.Result{Imported: 1}}, slog.LevelInfo)
+	h, buf := loggedHandler(&fakeUploader{res: ingest.Result{Imported: 1}}, slog.LevelInfo)
 	h.Routes().ServeHTTP(httptest.NewRecorder(), uploadRequest("/uploads/csv?bank=sparkasse", csvBody))
 
 	recs := logtest.Records(t, buf)
@@ -459,6 +561,21 @@ func (memStore) KnownIDs(context.Context, []storage.ExpenseKey) (map[string]bool
 
 func (memStore) SaveExpenses(context.Context, []storage.Expense) error { return nil }
 
+// memRecords claims every upload as new.
+type memRecords struct{}
+
+func (memRecords) Claim(_ context.Context, sum, bank, filename string) (uploads.Record, bool, error) {
+	return uploads.Record{ID: "u1", SHA256: sum, Bank: bank, Filename: filename, Status: uploads.StatusProcessing}, true, nil
+}
+
+func (memRecords) Finish(context.Context, string, ingest.Result) error { return nil }
+
+func (memRecords) Fail(context.Context, string) error { return nil }
+
+type memBlobs struct{}
+
+func (memBlobs) Put(context.Context, string, []byte) error { return nil }
+
 // realStack wires the real parser, importer and Claude categorizer, pointed at
 // the fake Messages API api, with a fake store; logs go to the returned buffer
 // at DEBUG.
@@ -469,7 +586,7 @@ func realStack(t *testing.T, apiKey string, api http.HandlerFunc) (http.Handler,
 	logger, buf := logtest.NewLogger(slog.LevelDebug)
 	claude := categorizer.NewClaude(apiKey, []string{"groceries"}, logger, option.WithBaseURL(srv.URL), option.WithMaxRetries(0))
 	imp := ingest.NewImporter(parser.NewParser(staticMappings{"testbank": testMapping}), claude, memStore{}, 0, logger)
-	return New(imp, logger).Routes(), buf
+	return New(uploads.New(memRecords{}, memBlobs{}, imp, logger), logger).Routes(), buf
 }
 
 func TestUploadCSV_AnthropicKeyNotLogged(t *testing.T) {

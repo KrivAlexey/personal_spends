@@ -74,7 +74,7 @@ func TestOpenAPIEndpoint(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
-			New(&fakeImporter{}, nil).Routes().ServeHTTP(rec, httptest.NewRequest(tt.method, "/openapi.yaml", nil))
+			New(&fakeUploader{}, nil).Routes().ServeHTTP(rec, httptest.NewRequest(tt.method, "/openapi.yaml", nil))
 
 			if rec.Code != tt.wantStatus {
 				t.Fatalf("status = %d, want %d", rec.Code, tt.wantStatus)
@@ -105,10 +105,39 @@ func TestOpenAPICoversRoutes(t *testing.T) {
 		}
 	}
 	slices.Sort(documented)
-	registered := slices.Sorted(maps.Keys(New(&fakeImporter{}, nil).routes()))
+	registered := slices.Sorted(maps.Keys(New(&fakeUploader{}, nil).routes()))
 
 	if !slices.Equal(documented, registered) {
 		t.Errorf("spec documents %v, server registers %v", documented, registered)
+	}
+}
+
+// TestOpenAPIUploadDocumentsStatuses fails when a status the upload route
+// answers, or its filename parameter, is missing from the spec.
+func TestOpenAPIUploadDocumentsStatuses(t *testing.T) {
+	var doc struct {
+		Paths map[string]map[string]struct {
+			Parameters []struct {
+				Name string `yaml:"name"`
+			} `yaml:"parameters"`
+			Responses map[string]any `yaml:"responses"`
+		} `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(openAPISpec, &doc); err != nil {
+		t.Fatalf("openapi.yaml does not parse: %v", err)
+	}
+	op := doc.Paths["/uploads/csv"]["post"]
+	for _, code := range []string{"200", "400", "409", "413", "500"} {
+		if _, ok := op.Responses[code]; !ok {
+			t.Errorf("POST /uploads/csv lacks response %s", code)
+		}
+	}
+	var params []string
+	for _, p := range op.Parameters {
+		params = append(params, p.Name)
+	}
+	if !slices.Contains(params, "filename") {
+		t.Errorf("POST /uploads/csv parameters = %v, want filename among them", params)
 	}
 }
 
@@ -122,9 +151,12 @@ func TestOpenAPIUploadResponseSchema(t *testing.T) {
 	}
 
 	var want []string
+	wantType := map[string]string{}
 	typ := reflect.TypeFor[uploadResponse]()
 	for i := range typ.NumField() {
-		want = append(want, strings.Split(typ.Field(i).Tag.Get("json"), ",")[0])
+		name := strings.Split(typ.Field(i).Tag.Get("json"), ",")[0]
+		want = append(want, name)
+		wantType[name] = map[reflect.Kind]string{reflect.Int: "integer", reflect.String: "string"}[typ.Field(i).Type.Kind()]
 	}
 	slices.Sort(want)
 
@@ -135,8 +167,8 @@ func TestOpenAPIUploadResponseSchema(t *testing.T) {
 		t.Errorf("schema required = %v, want %v (all fields are always present)", got, want)
 	}
 	for name, p := range schema.Properties {
-		if p.Type != "integer" {
-			t.Errorf("property %s type = %q, want integer", name, p.Type)
+		if p.Type != wantType[name] {
+			t.Errorf("property %s type = %q, want %q", name, p.Type, wantType[name])
 		}
 	}
 }
