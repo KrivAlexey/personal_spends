@@ -4,6 +4,7 @@ package handler
 import (
 	"bufio"
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -41,11 +42,36 @@ func New(imp importer, logger *slog.Logger) *Handler {
 	return &Handler{imp: imp, logger: logger}
 }
 
+// openAPISpec is the OpenAPI document for every route in routes.
+//
+//go:embed openapi.yaml
+var openAPISpec []byte
+
 // Routes returns the API's router, wrapped in the logging middleware.
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /uploads/csv", h.uploadCSV)
+	for pattern, fn := range h.routes() {
+		mux.HandleFunc(pattern, fn)
+	}
 	return h.withLogging(mux)
+}
+
+// routes maps each ServeMux pattern to its handler; openapi.yaml documents
+// exactly these.
+func (h *Handler) routes() map[string]http.HandlerFunc {
+	return map[string]http.HandlerFunc{
+		"POST /uploads/csv": h.uploadCSV,
+		"GET /openapi.yaml": h.openAPI,
+	}
+}
+
+// openAPI serves the embedded OpenAPI document.
+func (h *Handler) openAPI(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/yaml")
+	if _, err := w.Write(openAPISpec); err != nil {
+		h.logger.WarnContext(r.Context(), "write response failed",
+			"method", r.Method, "route", r.Pattern, "error", err)
+	}
 }
 
 // uploadCSV imports the export sent as the raw request body; the query
