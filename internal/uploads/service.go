@@ -5,8 +5,12 @@
 package uploads
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"time"
@@ -83,7 +87,61 @@ func New(records recordStore, blobs blobStore, imp importer, logger *slog.Logger
 	return &Service{records: records, blobs: blobs, imp: imp, logger: logger}
 }
 
-// Upload is not implemented yet.
+// finalizeTimeout bounds the status write after an import, which runs even
+// when the request is gone.
+const finalizeTimeout = 5 * time.Second
+
+// Upload keeps req.Body and imports it, unless the same bytes were uploaded
+// before: a done upload is answered from its record, one still processing
+// gives ErrInProgress. On an import error the partial Result is returned with
+// it, and the error keeps the importer's chain (parser.ErrBankMappingNotFound).
 func (s *Service) Upload(ctx context.Context, req Request) (Result, error) {
-	return Result{}, errors.New("uploads: not implemented")
+	digest := sha256.Sum256(req.Body)
+	sum := hex.EncodeToString(digest[:])
+
+	rec, claimed, err := s.records.Claim(ctx, sum, req.Bank, req.Filename)
+	if err != nil {
+		return Result{}, fmt.Errorf("uploads: claim: %w", err)
+	}
+	if !claimed {
+		s.logger.DebugContext(ctx, "upload repeated", "upload_id", rec.ID, "status", string(rec.Status))
+		if rec.Status == StatusDone {
+			return Result{UploadID: rec.ID, Result: rec.Counts}, nil
+		}
+		return Result{UploadID: rec.ID}, ErrInProgress
+	}
+	s.logger.DebugContext(ctx, "upload claimed", "upload_id", rec.ID)
+
+	if err := s.blobs.Put(ctx, blobKey(sum), req.Body); err != nil {
+		return Result{UploadID: rec.ID}, s.fail(ctx, rec.ID, fmt.Errorf("uploads: keep file: %w", err))
+	}
+
+	res, err := s.imp.Import(ctx, req.Bank, bytes.NewReader(req.Body))
+	if err != nil {
+		return Result{UploadID: rec.ID, Result: res}, s.fail(ctx, rec.ID, fmt.Errorf("uploads: %w", err))
+	}
+
+	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), finalizeTimeout)
+	defer cancel()
+	if err := s.records.Finish(fctx, rec.ID, res); err != nil {
+		return Result{UploadID: rec.ID, Result: res}, fmt.Errorf("uploads: finish: %w", err)
+	}
+	return Result{UploadID: rec.ID, Result: res}, nil
+}
+
+// fail marks the upload failed, on a context that outlives the request so a
+// client disconnect can't leave it processing, and returns cause joined with
+// any error from doing so.
+func (s *Service) fail(ctx context.Context, id string, cause error) error {
+	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), finalizeTimeout)
+	defer cancel()
+	if err := s.records.Fail(fctx, id); err != nil {
+		return errors.Join(cause, fmt.Errorf("uploads: mark failed: %w", err))
+	}
+	return cause
+}
+
+// blobKey is where the file with hex SHA-256 sum is kept.
+func blobKey(sum string) string {
+	return "csv/" + sum + ".csv"
 }
