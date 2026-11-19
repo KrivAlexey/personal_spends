@@ -258,7 +258,7 @@ Amounts are EUR only in v1; multi-currency is added if needed ([0010](decisions/
 - **Upload form:** a bank dropdown filled from `GET /banks`, a file picker and Upload. The file's bytes go unchanged to `POST /uploads/csv?bank=…&filename=…`, and the `upload_id` and counts or the error are shown.
 - **Uploads table:** from `GET /uploads`. It reloads after every upload and on Refresh.
 
-The page files are served with `Content-Security-Policy: default-src 'self'`, and the script builds the DOM from text only, so a file name can't become markup. Screenshots of a run are in [`docs/screenshots/web-ui/`](screenshots/web-ui/).
+The page files are served with `Content-Security-Policy: default-src 'self'; frame-ancestors 'none'`, and the script builds the DOM from text only, so a file name can't become markup. Screenshots of a run are in [`docs/screenshots/web-ui/`](screenshots/web-ui/).
 
 ## MCP Tools (v1)
 

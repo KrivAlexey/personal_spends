@@ -18,11 +18,11 @@ The system SHALL respond to `GET /` with `200` and an HTML page (`Content-Type: 
 - **THEN** the response is `404`, not the page
 
 ### Requirement: Page responses forbid foreign and inline scripts
-Responses to `GET /`, `GET /app.js` and `GET /app.css` SHALL carry `Content-Security-Policy: default-src 'self'` and `X-Content-Type-Options: nosniff`, so the browser runs no inline or foreign script.
+Responses to `GET /`, `GET /app.js` and `GET /app.css` SHALL carry `Content-Security-Policy: default-src 'self'; frame-ancestors 'none'` and `X-Content-Type-Options: nosniff`, so the browser runs no inline or foreign script and no other site can frame the page.
 
 #### Scenario: Security headers
 - **WHEN** a client sends `GET /`
-- **THEN** the response has `Content-Security-Policy: default-src 'self'` and `X-Content-Type-Options: nosniff`
+- **THEN** the response has `Content-Security-Policy: default-src 'self'; frame-ancestors 'none'` and `X-Content-Type-Options: nosniff`
 
 ### Requirement: The page lists uploads
 The page SHALL show the uploads returned by `GET /uploads`, newest first. Each row shows the file name, bank, upload time in the browser's local time zone, and status. A `done` upload also shows its imported, already-known and pending-skipped counts. An empty list SHALL show a "no uploads yet" message instead of an empty table.
@@ -40,7 +40,7 @@ The page SHALL offer a bank dropdown filled from `GET /banks`, a file picker and
 
 #### Scenario: Upload an export
 - **WHEN** the user selects bank `sparkasse`, picks `samples/sparkasse_fake.csv` and clicks Upload
-- **THEN** the server receives that file's exact bytes with `bank=sparkasse` and `filename=sparkasse_fake.csv`, the page shows the `upload_id` and counts, and the new upload appears at the top of the list
+- **THEN** the server receives that file's exact bytes with `bank=sparkasse` and `filename=sparkasse_fake.csv`, the page shows the `upload_id` and counts, and the new upload appears at the top of the list (a retry of an earlier upload keeps that upload's place, as `rest-api` specifies)
 
 #### Scenario: Upload without a file
 - **WHEN** the user clicks Upload with no file picked

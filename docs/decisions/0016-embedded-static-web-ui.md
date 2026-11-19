@@ -10,7 +10,7 @@ Uploading meant `curl` and checking an upload meant `psql` (#125). The owner wan
 
 - **Three hand-written static files**, `internal/handler/web/index.html`, `app.js` and `app.css`: plain HTML, CSS and vanilla JS, embedded with `go:embed`. Every runtime that serves the API (`cmd/server`, later `cmd/lambda`) serves the page, with nothing else to build or deploy.
 - **One explicit route per file**: `GET /{$}` (the root only; other unknown paths stay `404`), `GET /app.js` and `GET /app.css`. They're listed in `Handler.routes()` and `openapi.yaml` like every API route, so `TestOpenAPICoversRoutes` keeps them in step ([0014](0014-hand-written-openapi-spec.md)). Not `http.FileServerFS`, which would serve whatever lands in the directory.
-- **`Content-Security-Policy: default-src 'self'`** and `X-Content-Type-Options: nosniff` on the page files. No inline script or style, so the CSP needs no `'unsafe-inline'`.
+- **`Content-Security-Policy: default-src 'self'; frame-ancestors 'none'`** and `X-Content-Type-Options: nosniff` on the page files. No inline script or style, so the CSP needs no `'unsafe-inline'`.
 - **Caller input is only ever text:** `app.js` builds the DOM with `createElement` and `textContent`. A Go test fails if it uses `innerHTML`, `outerHTML`, `insertAdjacentHTML`, `document.write` or `eval(`.
 - **The page uses public API endpoints only:** `GET /banks`, `GET /uploads` and the existing `POST /uploads/csv`, so the page and other clients see the same contract.
 - **The page's behavior is checked in a real browser.** A headless Chromium run over the DevTools protocol uploads files and checks the DOM, and its screenshots go with the PR. There are no JS unit tests.
@@ -27,5 +27,5 @@ Uploading meant `curl` and checking an upload meant `psql` (#125). The owner wan
 ## Consequences
 
 - Revisit when the UI grows past a couple of views (expenses, categories, charts), when it needs to be hosted apart from the API, or when JS logic gets complex enough to need unit tests. Any of those is the point to bring in a toolchain.
-- The page has no authentication, like every route today. When the `X-API-Key` middleware lands, that change has to decide how the page supplies the key (a prompt kept in `sessionStorage`, or a cookie session for the page routes).
+- The page has no authentication, like every route today. Neither the page nor `POST /uploads/csv` checks `Origin` or `Host`. Until auth lands, any site open in the owner's browser could post a cross-origin upload to `localhost:8080`, or read `GET /uploads` through DNS rebinding. Listening on localhost only limits this to the owner's own browser, and the auth change closes it. When the `X-API-Key` middleware lands, that change has to decide how the page supplies the key (a prompt kept in `sessionStorage`, or a cookie session for the page routes).
 - UI regressions aren't caught by CI. The browser run is manual and recorded per PR.

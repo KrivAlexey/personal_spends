@@ -54,20 +54,27 @@ function uploadRow(u) {
   return tr;
 }
 
+// Overlapping loads (Refresh during an upload's reload) may answer out of
+// order; only the latest one may change the table.
+let listRequest = 0;
+
 async function loadUploads() {
   const table = byId("uploads");
   const empty = byId("empty");
   const listError = byId("list-error");
+  const mine = ++listRequest;
   try {
     const res = await fetch("/uploads");
     if (!res.ok) throw new Error("GET /uploads answered " + res.status + ": " + (await res.text()).trim());
     const { uploads } = await res.json();
+    if (mine !== listRequest) return;
     listError.hidden = true;
     byId("uploads-body").replaceChildren(...uploads.map(uploadRow));
     table.hidden = uploads.length === 0;
     empty.hidden = uploads.length !== 0;
   } catch (err) {
-    showMessage(listError, "Could not load uploads. " + err.message, "error");
+    if (mine !== listRequest) return;
+    showMessage(listError, "Could not load uploads; the table may be out of date. " + err.message, "error");
   }
 }
 

@@ -11,8 +11,9 @@ import (
 var webFiles embed.FS
 
 // webFile serves the embedded file name as contentType. The CSP lets the page
-// load only this server's script, styles and API: no inline or foreign code,
-// so a file name can't become script even if it reached the DOM as markup.
+// load only this server's script, styles and API, runs no inline or foreign
+// code (so injected markup still couldn't run as script), and stops other
+// sites from framing it.
 func (h *Handler) webFile(name, contentType string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		body, err := webFiles.ReadFile(name)
@@ -23,7 +24,7 @@ func (h *Handler) webFile(name, contentType string) http.HandlerFunc {
 			return
 		}
 		w.Header().Set("Content-Type", contentType)
-		w.Header().Set("Content-Security-Policy", "default-src 'self'")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		if _, err := w.Write(body); err != nil {
 			h.logger.WarnContext(r.Context(), "write response failed",

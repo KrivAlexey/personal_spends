@@ -158,5 +158,9 @@ func (provider *FileMappingProvider) GetMapping(ctx context.Context, bankName st
 // Banks returns the name of every mapping, sorted: the values GetMapping
 // accepts. The slice is the caller's to modify.
 func (provider *FileMappingProvider) Banks() []string {
-	return slices.Sorted(maps.Keys(provider.mappings))
+	banks := slices.Sorted(maps.Keys(provider.mappings))
+	if banks == nil {
+		return []string{} // JSON [] for GET /banks, not null
+	}
+	return banks
 }

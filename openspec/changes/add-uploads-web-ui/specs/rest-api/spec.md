@@ -3,7 +3,7 @@
 ## ADDED Requirements
 
 ### Requirement: List recent uploads
-The system SHALL respond to `GET /uploads` with `200` and a JSON body (`Content-Type: application/json`) `{"uploads": [...]}` holding the 100 most recently received upload records, newest first, as defined by `upload-tracking`. The list SHALL be `[]`, not `null`, when there are none.
+The system SHALL respond to `GET /uploads` with `200` and a JSON body (`Content-Type: application/json`) `{"uploads": [...]}` holding the 100 most recently received upload records, newest first by the time each file was first received, as defined by `upload-tracking`. A retried upload keeps the position of its first receipt. The list SHALL be `[]`, not `null`, when there are none.
 
 #### Scenario: Two uploads
 - **WHEN** `a.csv` was received, then `b.csv`, and a client sends `GET /uploads`
@@ -12,6 +12,10 @@ The system SHALL respond to `GET /uploads` with `200` and a JSON body (`Content-
 #### Scenario: No uploads
 - **WHEN** no upload was ever recorded and a client sends `GET /uploads`
 - **THEN** the response is `200` with `{"uploads": []}`
+
+#### Scenario: Retried upload keeps its place
+- **WHEN** `a.csv` failed, then `b.csv` was received, then `a.csv` was posted again and finished
+- **THEN** `uploads` lists `b.csv` first, then `a.csv` with status `done`
 
 #### Scenario: More than 100 uploads
 - **WHEN** 101 uploads were recorded and a client sends `GET /uploads`
@@ -36,7 +40,7 @@ The system SHALL respond `500` when the upload records can't be read, and the re
 - **THEN** the response to `GET /uploads` is `500` and its body does not contain the host name
 
 ### Requirement: List configured banks
-The system SHALL respond to `GET /banks` with `200` and a JSON body `{"banks": [...]}` holding the name of every configured bank mapping, sorted ascending: exactly the values `POST /uploads/csv` accepts as `bank`.
+The system SHALL respond to `GET /banks` with `200` and a JSON body `{"banks": [...]}` holding the name of every configured bank mapping, sorted ascending: exactly the values `POST /uploads/csv` accepts as `bank`. With no mappings the list SHALL be `[]`, not `null`.
 
 #### Scenario: One mapping
 - **WHEN** the bank mappings define only `sparkasse` and a client sends `GET /banks`

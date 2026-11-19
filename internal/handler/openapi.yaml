@@ -116,7 +116,7 @@ paths:
       summary: Upload web page
       description: >-
         The browser page for uploading exports and listing uploads. Served with
-        Content-Security-Policy default-src 'self'.
+        Content-Security-Policy default-src 'self'; frame-ancestors 'none'.
       responses:
         "200":
           description: The page.

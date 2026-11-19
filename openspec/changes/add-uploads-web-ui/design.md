@@ -22,7 +22,7 @@
 ## Decisions
 
 **1. Static files in `internal/handler/web/`, embedded with `embed.FS`, one explicit route each.**
-The routes are `GET /{$}` (index.html, exact root only), `GET /app.js` and `GET /app.css`. All three go through one small helper that sets the content type, `Content-Security-Policy: default-src 'self'` and `X-Content-Type-Options: nosniff`.
+The routes are `GET /{$}` (index.html, exact root only), `GET /app.js` and `GET /app.css`. All three go through one small helper that sets the content type, `Content-Security-Policy: default-src 'self'; frame-ancestors 'none'` and `X-Content-Type-Options: nosniff`.
 - Explicit patterns rather than `http.FileServerFS`, so `routes()` stays a list `openapi_test.go` can compare one-to-one, and nothing else in the embedded directory is served by accident.
 - The `{$}` matters: plain `GET /` would answer every unknown path with the page, breaking the 404 scenario and the access log's `unmatched` route.
 - *Alternative:* a single HTML file with inline `<script>`/`<style>`. That needs `'unsafe-inline'` or a computed hash in the CSP; three files keep the CSP to `'self'`.
@@ -38,6 +38,8 @@ The routes are `GET /{$}` (index.html, exact root only), `GET /app.js` and `GET 
 - The handler declares `bankLister interface { Banks() []string }` (unexported, per CLAUDE.md), and `cmd/server` passes the same provider it gives the parser.
 - `BankMappingProvider` is untouched. A future runtime-detected provider can add `Banks` when it exists.
 - `handler.New(up uploadService, banks bankLister, logger *slog.Logger)`.
+
+A list response that arrives after a newer one started is ignored (a request counter), so overlapping refreshes can't show an older list.
 
 **4. The JS builds the DOM with `createElement` + `textContent` only.**
 - No `innerHTML`, `outerHTML`, `insertAdjacentHTML` or `document.write`. A Go test reads the embedded `app.js` and fails if any of them appears: a cheap guard in place of a JS test runner.

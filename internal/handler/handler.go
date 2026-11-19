@@ -117,7 +117,7 @@ const maxListedUploads = 100
 func (h *Handler) listUploads(w http.ResponseWriter, r *http.Request) {
 	recs, err := h.up.List(r.Context(), maxListedUploads)
 	if err != nil {
-		h.logger.ErrorContext(r.Context(), "list uploads failed",
+		h.logger.Log(r.Context(), failureLevel(r, err), "list uploads failed",
 			"method", r.Method, "route", r.Pattern, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -126,9 +126,7 @@ func (h *Handler) listUploads(w http.ResponseWriter, r *http.Request) {
 	for _, rec := range recs {
 		entries = append(entries, toUploadEntry(rec))
 	}
-	h.writeJSON(w, r, struct {
-		Uploads []uploadEntry `json:"uploads"`
-	}{entries})
+	h.writeJSON(w, r, uploadsResponse{Uploads: entries})
 }
 
 func toUploadEntry(rec uploads.Record) uploadEntry {
@@ -148,7 +146,11 @@ func toUploadEntry(rec uploads.Record) uploadEntry {
 
 // listBanks answers the configured bank mapping names.
 func (h *Handler) listBanks(w http.ResponseWriter, r *http.Request) {
-	h.writeJSON(w, r, banksResponse{Banks: h.banks.Banks()})
+	banks := h.banks.Banks()
+	if banks == nil {
+		banks = []string{}
+	}
+	h.writeJSON(w, r, banksResponse{Banks: banks})
 }
 
 // writeJSON answers 200 with v as JSON.
@@ -205,13 +207,7 @@ func (h *Handler) uploadCSV(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		// A client that disconnected isn't a server fault. Only the request's
-		// own cancellation counts: a deadline, or a Canceled from a context we
-		// cancelled ourselves, is ours to fix.
-		level := slog.LevelError
-		if errors.Is(err, context.Canceled) && errors.Is(r.Context().Err(), context.Canceled) {
-			level = slog.LevelWarn
-		}
+		level := failureLevel(r, err)
 		// The counts tell the operator how much was saved before the failure;
 		// a re-run is safe (ADR 0011).
 		h.logger.Log(r.Context(), level, "upload failed",
@@ -229,6 +225,17 @@ func (h *Handler) uploadCSV(w http.ResponseWriter, r *http.Request) {
 		h.logger.WarnContext(r.Context(), "write response failed",
 			"method", r.Method, "route", r.Pattern, "error", err)
 	}
+}
+
+// failureLevel is WARN when err comes from the client disconnecting, ERROR
+// otherwise. A client that disconnected isn't a server fault. Only the
+// request's own cancellation counts: a deadline, or a Canceled from a context
+// we cancelled ourselves, is ours to fix.
+func failureLevel(r *http.Request, err error) slog.Level {
+	if errors.Is(err, context.Canceled) && errors.Is(r.Context().Err(), context.Canceled) {
+		return slog.LevelWarn
+	}
+	return slog.LevelError
 }
 
 // reject answers status with body and logs reason, which must be fixed text

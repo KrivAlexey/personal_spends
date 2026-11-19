@@ -25,7 +25,7 @@
   - a `List` error gives `500` without the error text, plus one ERROR `list uploads failed`
   - `GET /banks` returns `{"banks": ["abank", "sparkasse"]}`
   - `GET /` returns `text/html; charset=utf-8` and references `/app.js` and `/app.css`; `GET /app.js` returns `text/javascript; charset=utf-8`, `GET /app.css` returns `text/css; charset=utf-8`
-  - all three page responses carry `Content-Security-Policy: default-src 'self'` and `X-Content-Type-Options: nosniff`
+  - all three page responses carry `Content-Security-Policy: default-src 'self'; frame-ancestors 'none'` and `X-Content-Type-Options: nosniff`
   - `GET /nothing-here` is `404` and logged as route `unmatched`
   - the embedded `app.js` contains none of `innerHTML`, `outerHTML`, `insertAdjacentHTML`, `document.write`
   - `openapi.yaml` documents the five new routes with matching content types (`TestOpenAPICoversRoutes` plus a schema test for the list entry and banks bodies)
