@@ -16,6 +16,8 @@ terraform {
 # The "local" workspace targets DynamoDB Local (localhost:8000) with its own
 # state; every other workspace targets real AWS. Tying the endpoint to the
 # workspace means emulator settings can never be applied with the real state.
+# scripts/reset-local.sh applies `local` with -auto-approve: give every new
+# resource `count = local.emulator ? 0 : 1` unless it works against the emulator.
 locals {
   emulator = terraform.workspace == "local"
 }

@@ -5,6 +5,7 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
+unset TF_WORKSPACE  # an exported one would redirect the workspace commands below
 # The server creates its Postgres table only at startup, so one kept across the reset breaks.
 curl -s --max-time 2 -o /dev/null http://localhost:8080/ && { echo "something listens on localhost:8080; stop the server first" >&2; exit 1; }
 
@@ -19,13 +20,10 @@ done
 
 cd terraform
 terraform init -input=false >/dev/null
-# TF_WORKSPACE scopes the workspace to these commands; the saved selection stays as it was.
-if ! terraform workspace list | grep -Eq '^[* ] +local$'; then
-  prev="$(terraform workspace show)"
-  terraform workspace new local >/dev/null
-  terraform workspace select "$prev" >/dev/null
-fi
+# For the local backend a workspace is its folder; creating it this way leaves the saved selection alone.
+mkdir -p terraform.tfstate.d/local
 # The old state lists a table the restarted DynamoDB Local no longer has.
 rm -f terraform.tfstate.d/local/terraform.tfstate terraform.tfstate.d/local/terraform.tfstate.backup
+# TF_WORKSPACE scopes the workspace to this one command.
 # -auto-approve is safe only because `local` is pinned to the emulator in main.tf.
 TF_WORKSPACE=local terraform apply -auto-approve -input=false

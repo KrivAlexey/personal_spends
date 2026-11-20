@@ -1,5 +1,8 @@
 # Local stand-ins for the AWS services and Postgres, for `scripts/run-local.sh`
 # and the integration tests. Data is in-memory: `docker compose down` wipes it.
+# Fixed project name: every git worktree then shares (and resets) the same containers.
+name: personal-spends
+
 services:
   dynamodb:
     image: amazon/dynamodb-local:3.3.2
