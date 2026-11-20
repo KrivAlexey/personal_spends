@@ -69,7 +69,7 @@ docker compose exec postgres psql -U spends -c 'SELECT * FROM uploads'
 
 Or open http://localhost:8080/, pick `sparkasse` and upload `samples/sparkasse_fake.csv`. The first upload imports 5 rows and skips 1 pending. Posting the same file again returns the same `upload_id` and counts without importing anything. A changed file whose rows overlap reports the overlapping rows as `already_known`.
 
-To skip typing the variables, put them in `.env.local` (gitignored) and run `scripts/run-local.sh`; pass another env file as the first argument, e.g. `scripts/run-local.sh .env`. The file is sourced as shell code, so quote values that contain spaces.
+To skip typing the variables, put them in `.env.local` (gitignored) and run `scripts/run-local.sh`, which also opens http://localhost:8080/ in your browser (`xdg-open`, or prints the URL) once the server answers, and refuses to start if something already listens on that port; pass another env file as the first argument, e.g. `scripts/run-local.sh .env`. The file is sourced as shell code, so quote values that contain spaces.
 
 ## Build and test
 
