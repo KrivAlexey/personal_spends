@@ -105,9 +105,10 @@ func New(records recordStore, blobs blobStore, imp importer, logger *slog.Logger
 // repeat may take it over (claimSQL uses the same interval).
 const staleAfter = 15 * time.Minute
 
-// importTimeout ends an import well before its claim goes stale, so a repeat
-// can never take over an upload that is still importing.
-const importTimeout = staleAfter - 2*time.Minute
+// workTimeout bounds keeping the file and importing it, together, from just
+// after the claim: they end well before the claim goes stale, so a repeat can
+// never take over an upload that is still being kept or imported.
+const workTimeout = staleAfter - 2*time.Minute
 
 // finalizeTimeout bounds the status write after an import, which runs even
 // when the request is gone.
@@ -135,13 +136,13 @@ func (s *Service) Upload(ctx context.Context, req Request) (Result, error) {
 	}
 	s.logger.DebugContext(ctx, "upload claimed", "upload_id", rec.ID)
 
-	if err := s.blobs.Put(ctx, blobKey(sum), req.Body); err != nil {
+	wctx, cancelWork := context.WithTimeout(ctx, workTimeout)
+	defer cancelWork()
+	if err := s.blobs.Put(wctx, blobKey(sum), req.Body); err != nil {
 		return Result{UploadID: rec.ID}, s.fail(ctx, rec, fmt.Errorf("uploads: keep file: %w", err))
 	}
 
-	ictx, cancelImport := context.WithTimeout(ctx, importTimeout)
-	res, err := s.imp.Import(ictx, req.Bank, bytes.NewReader(req.Body))
-	cancelImport()
+	res, err := s.imp.Import(wctx, req.Bank, bytes.NewReader(req.Body))
 	if err != nil {
 		return Result{UploadID: rec.ID, Result: res}, s.fail(ctx, rec, fmt.Errorf("uploads: %w", err))
 	}

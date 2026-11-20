@@ -86,8 +86,8 @@ POST /uploads/csv?bank=<bankName>[&filename=<name>]  (raw CSV body, 0012)
         ├─ PostgresRecords.Claim(sha256(body))   atomic upsert on the unique hash:
         │     done → return its id + counts      new, failed or stale (>15 min) processing
         │     processing → 409                   → claimed as processing
-        ├─ S3Blobs.Put(csv/<sha256>.csv, body)
-        ├─ ingest.Importer.Import(ctx, bankName, r)     the loop below, ≤ 13 min
+        ├─ S3Blobs.Put(csv/<sha256>.csv, body)          ┐ one 13 min deadline,
+        ├─ ingest.Importer.Import(ctx, bankName, r)     ┘ the loop below
         └─ Finish(counts) → done, or Fail → failed  (survives a client disconnect;
                                                     only while this claim holds)
 

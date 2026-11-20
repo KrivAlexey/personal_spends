@@ -72,10 +72,16 @@ func (f *fakeRecords) List(_ context.Context, limit int) ([]Record, error) {
 
 type fakeBlobs struct {
 	putErr error
+	delay  time.Duration // how long Put takes, like a slow S3
 	puts   map[string][]byte
+
+	gotDeadline time.Time
+	hasDeadline bool
 }
 
-func (f *fakeBlobs) Put(_ context.Context, key string, body []byte) error {
+func (f *fakeBlobs) Put(ctx context.Context, key string, body []byte) error {
+	f.gotDeadline, f.hasDeadline = ctx.Deadline()
+	time.Sleep(f.delay)
 	if f.putErr != nil {
 		return f.putErr
 	}
@@ -343,6 +349,30 @@ func TestService_Upload_ImportEndsBeforeClaimIsStale(t *testing.T) {
 	if limit := start.Add(staleAfter - time.Minute); imp.gotDeadline.After(limit) {
 		t.Errorf("import deadline %v after start, want at least a minute before staleAfter (%v)",
 			imp.gotDeadline.Sub(start).Round(time.Second), staleAfter)
+	}
+}
+
+// The claim goes stale staleAfter after it starts, so the S3 put and the
+// import together must end before then: one deadline for both, set before the
+// put, not a fresh import deadline once a slow put returns.
+func TestService_Upload_PutAndImportShareOneDeadline(t *testing.T) {
+	blobs := &fakeBlobs{delay: 20 * time.Millisecond}
+	imp := &fakeImporter{res: counts}
+	start := time.Now()
+
+	if _, err := New(&fakeRecords{}, blobs, imp, nil).Upload(context.Background(), Request{Bank: "sparkasse", Body: body}); err != nil {
+		t.Fatalf("Upload() error = %v", err)
+	}
+	if !blobs.hasDeadline {
+		t.Fatal("put context has no deadline")
+	}
+	if limit := start.Add(staleAfter - time.Minute); blobs.gotDeadline.After(limit) {
+		t.Errorf("put deadline %v after start, want at least a minute before staleAfter (%v)",
+			blobs.gotDeadline.Sub(start).Round(time.Second), staleAfter)
+	}
+	if !imp.gotDeadline.Equal(blobs.gotDeadline) {
+		t.Errorf("import deadline is %v after the put's, want the same deadline",
+			imp.gotDeadline.Sub(blobs.gotDeadline))
 	}
 }
 

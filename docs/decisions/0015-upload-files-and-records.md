@@ -13,7 +13,7 @@
 - **The SHA-256 of the body is the idempotency key** (unique column), whatever the bank or file name:
   - `done` → answered from the record, nothing kept or imported again
   - `processing` for 15 minutes or less → `409`
-  - `failed`, or `processing` for more than 15 minutes → imported again under the same id, with the repeat's bank and file name. 15 minutes is Lambda's maximum run time, and every import runs under a 13-minute timeout, so a reclaimable row can't still be importing, on `cmd/server` too
+  - `failed`, or `processing` for more than 15 minutes → imported again under the same id, with the repeat's bank and file name. 15 minutes is Lambda's maximum run time, and keeping the file and importing it run together under one 13-minute timeout, set right after the claim, so a reclaimable row can't still be in progress, on `cmd/server` too
 - **Claiming is one atomic upsert** (`INSERT … ON CONFLICT (sha256) DO UPDATE … WHERE failed OR stale RETURNING`), using the database clock. The conflicting row is locked for the upsert, so concurrent identical requests have one winner. The claim's `started_at` is its token: `Finish`/`Fail` match on it, so a request whose claim was taken over gets `ErrClaimLost` instead of overwriting the new owner's record.
 - **Processing stays synchronous** in the request: claim → keep file → import → finish or fail. The final status write runs on `context.WithoutCancel`, so a client disconnect can't leave the row `processing`.
 - **`internal/uploads.Service`** orders the steps behind narrow, consumer-side interfaces; `S3Blobs` and `PostgresRecords` implement them, over `aws-sdk-go-v2/service/s3` and `jackc/pgx/v5`.
@@ -37,7 +37,8 @@
 - `cmd/server` now needs `DATABASE_URL` and `UPLOADS_BUCKET`, so offline runs need the compose containers.
 - The handler reads the whole body before importing. A body cut off mid-upload fails before anything is claimed or kept, which replaces the old read-error recorder.
 - A crash between keeping the file and recording the outcome blocks that file's hash with `409` for up to 15 minutes.
-- An import longer than 13 minutes fails; re-uploading resumes it, since saved rows are skipped (0011).
+- Keeping the file plus importing it may take at most 13 minutes, or the upload fails; re-uploading resumes it, since saved rows are skipped (0011).
+- The bucket has no versioning: keys are content hashes, so an object is never overwritten with different bytes. It has no lifecycle rule either, so uploaded bank statements are kept until one is added. A retention period is the owner's decision, to be made before real statements are uploaded.
 - Error text of a failed upload isn't stored (it may contain bank data); the logs carry it with the `upload_id`.
 - The Postgres and S3 integration tests run only locally (`TEST_DATABASE_URL`, `TEST_S3_ENDPOINT`). CI has no service containers yet.
 - Nothing reads the kept files yet; a reprocess-from-S3 job, a retention lifecycle and RDS for `uploads` are later work.
