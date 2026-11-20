@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Personal spends: uploads</title>
+  <link rel="stylesheet" href="/app.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header>
+    <h1>Personal spends</h1>
+    <p class="subtitle">Upload a bank export and see what happened to every upload.</p>
+  </header>
+
+  <main>
+    <section class="card" aria-labelledby="upload-title">
+      <h2 id="upload-title">Upload a bank export</h2>
+      <form id="upload-form" novalidate>
+        <div class="field">
+          <label for="bank">Bank</label>
+          <select id="bank" name="bank" required></select>
+        </div>
+        <div class="field grow">
+          <label for="file">CSV export</label>
+          <input id="file" name="file" type="file" accept=".csv,text/csv">
+        </div>
+        <button id="upload-button" type="submit">Upload</button>
+      </form>
+      <p id="message" class="message" role="status" aria-live="polite" hidden></p>
+    </section>
+
+    <section class="card" aria-labelledby="uploads-title">
+      <div class="card-head">
+        <h2 id="uploads-title">Uploads</h2>
+        <button id="refresh" type="button" class="secondary">Refresh</button>
+      </div>
+      <p id="empty" class="empty" hidden>No uploads yet.</p>
+      <p id="list-error" class="message error" role="alert" hidden></p>
+      <div class="table-wrap">
+        <table id="uploads" hidden>
+          <thead>
+            <tr>
+              <th scope="col">File</th>
+              <th scope="col">Bank</th>
+              <th scope="col">Uploaded</th>
+              <th scope="col">Status</th>
+              <th scope="col" class="num">Imported</th>
+              <th scope="col" class="num">Already known</th>
+              <th scope="col" class="num">Pending skipped</th>
+            </tr>
+          </thead>
+          <tbody id="uploads-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

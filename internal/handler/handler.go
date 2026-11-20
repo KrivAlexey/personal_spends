@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/KrivAlexey/personal_spends/internal/parser"
 	"github.com/KrivAlexey/personal_spends/internal/uploads"
@@ -23,23 +24,52 @@ type uploadResponse struct {
 	PendingSkipped int    `json:"pending_skipped"`
 }
 
-type uploader interface {
+type uploadService interface {
 	Upload(ctx context.Context, req uploads.Request) (uploads.Result, error)
+	List(ctx context.Context, limit int) ([]uploads.Record, error)
+}
+
+type bankLister interface {
+	Banks() []string
 }
 
 // Handler serves the REST API.
 type Handler struct {
-	up     uploader
+	up     uploadService
+	banks  bankLister
 	logger *slog.Logger
 }
 
-// New returns a Handler that runs uploads with up and logs to logger; a nil
-// logger discards.
-func New(up uploader, logger *slog.Logger) *Handler {
+// New returns a Handler that runs and lists uploads with up, lists bank
+// names from banks and logs to logger; a nil logger discards.
+func New(up uploadService, banks bankLister, logger *slog.Logger) *Handler {
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
-	return &Handler{up: up, logger: logger}
+	return &Handler{up: up, banks: banks, logger: logger}
+}
+
+// uploadEntry is one element of the GET /uploads list; counts are null
+// unless the upload is done.
+type uploadEntry struct {
+	UploadID       string    `json:"upload_id"`
+	Filename       string    `json:"filename"`
+	Bank           string    `json:"bank"`
+	UploadedAt     time.Time `json:"uploaded_at"`
+	Status         string    `json:"status"`
+	Imported       *int      `json:"imported"`
+	AlreadyKnown   *int      `json:"already_known"`
+	PendingSkipped *int      `json:"pending_skipped"`
+}
+
+// uploadsResponse is the JSON body of GET /uploads.
+type uploadsResponse struct {
+	Uploads []uploadEntry `json:"uploads"`
+}
+
+// banksResponse is the JSON body of GET /banks.
+type banksResponse struct {
+	Banks []string `json:"banks"`
 }
 
 // openAPISpec is the OpenAPI document for every route in routes.
@@ -61,7 +91,13 @@ func (h *Handler) Routes() http.Handler {
 func (h *Handler) routes() map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
 		"POST /uploads/csv": h.uploadCSV,
+		"GET /uploads":      h.listUploads,
+		"GET /banks":        h.listBanks,
 		"GET /openapi.yaml": h.openAPI,
+		// {$}: only the root itself is the page, other paths stay 404.
+		"GET /{$}":     h.webFile("web/index.html", "text/html; charset=utf-8"),
+		"GET /app.js":  h.webFile("web/app.js", "text/javascript; charset=utf-8"),
+		"GET /app.css": h.webFile("web/app.css", "text/css; charset=utf-8"),
 	}
 }
 
@@ -69,6 +105,58 @@ func (h *Handler) routes() map[string]http.HandlerFunc {
 func (h *Handler) openAPI(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/yaml")
 	if _, err := w.Write(openAPISpec); err != nil {
+		h.logger.WarnContext(r.Context(), "write response failed",
+			"method", r.Method, "route", r.Pattern, "error", err)
+	}
+}
+
+// maxListedUploads is how many upload records GET /uploads returns.
+const maxListedUploads = 100
+
+// listUploads answers the most recent upload records, newest first.
+func (h *Handler) listUploads(w http.ResponseWriter, r *http.Request) {
+	recs, err := h.up.List(r.Context(), maxListedUploads)
+	if err != nil {
+		h.logger.Log(r.Context(), failureLevel(r, err), "list uploads failed",
+			"method", r.Method, "route", r.Pattern, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	entries := make([]uploadEntry, 0, len(recs))
+	for _, rec := range recs {
+		entries = append(entries, toUploadEntry(rec))
+	}
+	h.writeJSON(w, r, uploadsResponse{Uploads: entries})
+}
+
+func toUploadEntry(rec uploads.Record) uploadEntry {
+	e := uploadEntry{
+		UploadID:   rec.ID,
+		Filename:   rec.Filename,
+		Bank:       rec.Bank,
+		UploadedAt: rec.UploadedAt.UTC(),
+		Status:     string(rec.Status),
+	}
+	if rec.Status == uploads.StatusDone {
+		c := rec.Counts
+		e.Imported, e.AlreadyKnown, e.PendingSkipped = &c.Imported, &c.AlreadyKnown, &c.PendingSkipped
+	}
+	return e
+}
+
+// listBanks answers the configured bank mapping names.
+func (h *Handler) listBanks(w http.ResponseWriter, r *http.Request) {
+	banks := h.banks.Banks()
+	if banks == nil {
+		banks = []string{}
+	}
+	h.writeJSON(w, r, banksResponse{Banks: banks})
+}
+
+// writeJSON answers 200 with v as JSON.
+func (h *Handler) writeJSON(w http.ResponseWriter, r *http.Request, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(v); err != nil {
 		h.logger.WarnContext(r.Context(), "write response failed",
 			"method", r.Method, "route", r.Pattern, "error", err)
 	}
@@ -119,13 +207,7 @@ func (h *Handler) uploadCSV(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		// A client that disconnected isn't a server fault. Only the request's
-		// own cancellation counts: a deadline, or a Canceled from a context we
-		// cancelled ourselves, is ours to fix.
-		level := slog.LevelError
-		if errors.Is(err, context.Canceled) && errors.Is(r.Context().Err(), context.Canceled) {
-			level = slog.LevelWarn
-		}
+		level := failureLevel(r, err)
 		// The counts tell the operator how much was saved before the failure;
 		// a re-run is safe (ADR 0011).
 		h.logger.Log(r.Context(), level, "upload failed",
@@ -143,6 +225,17 @@ func (h *Handler) uploadCSV(w http.ResponseWriter, r *http.Request) {
 		h.logger.WarnContext(r.Context(), "write response failed",
 			"method", r.Method, "route", r.Pattern, "error", err)
 	}
+}
+
+// failureLevel is WARN when err comes from the client disconnecting, ERROR
+// otherwise. A client that disconnected isn't a server fault. Only the
+// request's own cancellation counts: a deadline, or a Canceled from a context
+// we cancelled ourselves, is ours to fix.
+func failureLevel(r *http.Request, err error) slog.Level {
+	if errors.Is(err, context.Canceled) && errors.Is(r.Context().Err(), context.Canceled) {
+		return slog.LevelWarn
+	}
+	return slog.LevelError
 }
 
 // reject answers status with body and logs reason, which must be fixed text

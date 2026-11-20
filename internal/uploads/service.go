@@ -73,6 +73,8 @@ type recordStore interface {
 	// ErrClaimLost if the upload was claimed again since.
 	Finish(ctx context.Context, claim Record, counts ingest.Result) error
 	Fail(ctx context.Context, claim Record) error
+	// List returns up to limit records, most recently received first.
+	List(ctx context.Context, limit int) ([]Record, error)
 }
 
 type blobStore interface {
@@ -168,4 +170,13 @@ func (s *Service) fail(ctx context.Context, claim Record, cause error) error {
 // blobKey is where the file with hex SHA-256 sum is kept.
 func blobKey(sum string) string {
 	return "csv/" + sum + ".csv"
+}
+
+// List returns up to limit upload records, most recently received first.
+func (s *Service) List(ctx context.Context, limit int) ([]Record, error) {
+	recs, err := s.records.List(ctx, limit)
+	if err != nil {
+		return nil, fmt.Errorf("uploads: list: %w", err)
+	}
+	return recs, nil
 }

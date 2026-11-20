@@ -38,6 +38,8 @@ go run ./cmd/server          # from the repo root; serves localhost:8080
 curl -X POST 'localhost:8080/uploads/csv?bank=sparkasse' --data-binary @export.csv
 ```
 
+Or open http://localhost:8080/ in a browser: it uploads an export and lists every upload with its status and counts ([screenshots](docs/screenshots/web-ui/)).
+
 The server also needs `DATABASE_URL` (PostgreSQL, for upload records) and `UPLOADS_BUCKET` (S3, for the uploaded files). PostgreSQL has no AWS deployment yet, so use the compose one below. An upload calls Claude and writes to the DynamoDB table (`DYNAMODB_TABLE`, default `personal-spends-expenses`), so it costs money and needs the table from `terraform apply`. Posting the same bytes again returns the first upload's `upload_id` and counts without importing anything ([0015](docs/decisions/0015-upload-files-and-records.md)). Other settings are listed in [`docs/architecture.md`](docs/architecture.md#configuration). The API's OpenAPI document is served at `localhost:8080/openapi.yaml`.
 
 ### Offline: no Anthropic, no AWS
@@ -65,7 +67,7 @@ aws dynamodb scan --table-name personal-spends-expenses --endpoint-url http://lo
 docker compose exec postgres psql -U spends -c 'SELECT * FROM uploads'
 ```
 
-The first upload imports 5 rows and skips 1 pending. Posting the same file again returns the same `upload_id` and counts without importing anything. A changed file whose rows overlap reports the overlapping rows as `already_known`.
+Or open http://localhost:8080/, pick `sparkasse` and upload `samples/sparkasse_fake.csv`. The first upload imports 5 rows and skips 1 pending. Posting the same file again returns the same `upload_id` and counts without importing anything. A changed file whose rows overlap reports the overlapping rows as `already_known`.
 
 To skip typing the variables, put them in `.env.local` (gitignored) and run `scripts/run-local.sh`; pass another env file as the first argument, e.g. `scripts/run-local.sh .env`. The file is sourced as shell code, so quote values that contain spaces.
 

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -33,11 +34,26 @@ type fakeUploader struct {
 	// onUpload, when set, runs instead of returning err.
 	onUpload func(ctx context.Context) error
 
+	list      []uploads.Record
+	listErr   error
+	listLimit int
+
 	called      bool
 	gotBank     string
 	gotFilename string
 	gotBody     string
 }
+
+func (f *fakeUploader) List(_ context.Context, limit int) ([]uploads.Record, error) {
+	f.listLimit = limit
+	return f.list, f.listErr
+}
+
+type staticBanks []string
+
+func (b staticBanks) Banks() []string { return append([]string(nil), b...) }
+
+var testBanks = staticBanks{"abank", "sparkasse"}
 
 func (f *fakeUploader) Upload(ctx context.Context, req uploads.Request) (uploads.Result, error) {
 	f.called = true
@@ -157,7 +173,7 @@ func TestUploadCSV(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
-			New(tt.imp, nil).Routes().ServeHTTP(rec, uploadRequest(tt.target, tt.body))
+			New(tt.imp, testBanks, nil).Routes().ServeHTTP(rec, uploadRequest(tt.target, tt.body))
 
 			if rec.Code != tt.wantStatus {
 				t.Fatalf("status = %d, want %d (body: %q)", rec.Code, tt.wantStatus, rec.Body.String())
@@ -210,7 +226,7 @@ func TestUploadCSV_PassesRequestToUploader(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			imp := &fakeUploader{}
 			rec := httptest.NewRecorder()
-			New(imp, nil).Routes().ServeHTTP(rec, uploadRequest(tt.target, body))
+			New(imp, testBanks, nil).Routes().ServeHTTP(rec, uploadRequest(tt.target, body))
 
 			if imp.gotBank != "sparkasse" || imp.gotFilename != tt.wantFilename {
 				t.Errorf("bank, filename = %q, %q; want sparkasse, %q", imp.gotBank, imp.gotFilename, tt.wantFilename)
@@ -237,7 +253,7 @@ func TestUploadCSV_BodySizeLimit(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			imp := &fakeUploader{}
 			rec := httptest.NewRecorder()
-			New(imp, nil).Routes().ServeHTTP(rec, uploadRequest("/uploads/csv?bank=sparkasse", strings.Repeat("a", tt.size)))
+			New(imp, testBanks, nil).Routes().ServeHTTP(rec, uploadRequest("/uploads/csv?bank=sparkasse", strings.Repeat("a", tt.size)))
 
 			if rec.Code != tt.wantStatus {
 				t.Errorf("status = %d, want %d", rec.Code, tt.wantStatus)
@@ -278,7 +294,7 @@ func TestUploadCSV_UnreadableBody(t *testing.T) {
 			imp := &fakeUploader{}
 			rec := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodPost, "/uploads/csv?bank=sparkasse", tt.body)
-			New(imp, nil).Routes().ServeHTTP(rec, req)
+			New(imp, testBanks, nil).Routes().ServeHTTP(rec, req)
 
 			if rec.Code != http.StatusBadRequest {
 				t.Errorf("status = %d, want %d (body: %q)", rec.Code, http.StatusBadRequest, rec.Body.String())
@@ -498,7 +514,7 @@ func TestUploadCSV_BankCannotForgeRecord(t *testing.T) {
 				t.Fatalf("logging.New: %v", err)
 			}
 			imp := &fakeUploader{err: fmt.Errorf("ingest: %w", parser.ErrBankMappingNotFound)}
-			New(imp, logger).Routes().ServeHTTP(httptest.NewRecorder(),
+			New(imp, testBanks, logger).Routes().ServeHTTP(httptest.NewRecorder(),
 				uploadRequest(bankTarget("x\nlevel=ERROR msg=forged"), csvBody))
 
 			lines := slices.Collect(strings.Lines(buf.String()))
@@ -572,6 +588,10 @@ func (memRecords) Finish(context.Context, uploads.Record, ingest.Result) error {
 
 func (memRecords) Fail(context.Context, uploads.Record) error { return nil }
 
+func (memRecords) List(context.Context, int) ([]uploads.Record, error) {
+	return []uploads.Record{}, nil
+}
+
 type memBlobs struct{}
 
 func (memBlobs) Put(context.Context, string, []byte) error { return nil }
@@ -586,7 +606,7 @@ func realStack(t *testing.T, apiKey string, api http.HandlerFunc) (http.Handler,
 	logger, buf := logtest.NewLogger(slog.LevelDebug)
 	claude := categorizer.NewClaude(apiKey, []string{"groceries"}, logger, option.WithBaseURL(srv.URL), option.WithMaxRetries(0))
 	imp := ingest.NewImporter(parser.NewParser(staticMappings{"testbank": testMapping}), claude, memStore{}, 0, logger)
-	return New(uploads.New(memRecords{}, memBlobs{}, imp, logger), logger).Routes(), buf
+	return New(uploads.New(memRecords{}, memBlobs{}, imp, logger), testBanks, logger).Routes(), buf
 }
 
 func TestUploadCSV_AnthropicKeyNotLogged(t *testing.T) {
@@ -675,5 +695,139 @@ func TestUploadCSV_BankDataNotLogged(t *testing.T) {
 			}
 			logtest.AssertLacks(t, buf, tt.lacks...)
 		})
+	}
+}
+
+func TestListUploads(t *testing.T) {
+	received := time.Date(2026, 11, 19, 17, 1, 3, 0, time.FixedZone("CET", 3600))
+	tests := []struct {
+		name string
+		list []uploads.Record
+		want string // JSON body
+	}{
+		{
+			name: "no uploads is an empty list",
+			list: []uploads.Record{},
+			want: `{"uploads": []}`,
+		},
+		{
+			name: "nil from the store is still an empty list",
+			list: nil,
+			want: `{"uploads": []}`,
+		},
+		{
+			name: "done and failed, in the store's order",
+			list: []uploads.Record{
+				{ID: "u2", Filename: "", Bank: "sparkasse", UploadedAt: received, Status: uploads.StatusFailed,
+					Counts: ingest.Result{}},
+				{ID: "u1", Filename: "statement.csv", Bank: "sparkasse", UploadedAt: received.Add(-time.Hour), Status: uploads.StatusDone,
+					Counts: ingest.Result{Imported: 5, AlreadyKnown: 3, PendingSkipped: 2}},
+			},
+			want: `{"uploads": [
+				{"upload_id": "u2", "filename": "", "bank": "sparkasse", "uploaded_at": "2026-11-19T16:01:03Z",
+				 "status": "failed", "imported": null, "already_known": null, "pending_skipped": null},
+				{"upload_id": "u1", "filename": "statement.csv", "bank": "sparkasse", "uploaded_at": "2026-11-19T15:01:03Z",
+				 "status": "done", "imported": 5, "already_known": 3, "pending_skipped": 2}]}`,
+		},
+		{
+			name: "processing has no counts",
+			list: []uploads.Record{{ID: "u3", Bank: "sparkasse", UploadedAt: received, Status: uploads.StatusProcessing}},
+			want: `{"uploads": [{"upload_id": "u3", "filename": "", "bank": "sparkasse", "uploaded_at": "2026-11-19T16:01:03Z",
+				"status": "processing", "imported": null, "already_known": null, "pending_skipped": null}]}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			up := &fakeUploader{list: tt.list}
+			rec := httptest.NewRecorder()
+			New(up, testBanks, nil).Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/uploads", nil))
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200 (body %q)", rec.Code, rec.Body.String())
+			}
+			if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+				t.Errorf("Content-Type = %q, want application/json", ct)
+			}
+			if up.listLimit != 100 {
+				t.Errorf("List limit = %d, want 100", up.listLimit)
+			}
+			assertJSONEqual(t, rec.Body.Bytes(), tt.want)
+		})
+	}
+}
+
+func TestListUploads_FailureHidesInternals(t *testing.T) {
+	up := &fakeUploader{listErr: errors.New("uploads: list: postgres: dial db.internal.example:5432 refused")}
+	h, buf := loggedHandler(up, slog.LevelInfo)
+	rec := httptest.NewRecorder()
+	h.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/uploads", nil))
+
+	if rec.Code != http.StatusInternalServerError || strings.Contains(rec.Body.String(), "db.internal") {
+		t.Errorf("response = %d %q, want 500 without the host", rec.Code, rec.Body.String())
+	}
+	errs := logtest.Filter(logtest.Records(t, buf), "ERROR", "list uploads failed")
+	if len(errs) != 1 {
+		t.Fatalf("want one ERROR list uploads failed, got:\n%s", buf)
+	}
+	assertFields(t, errs[0], map[string]any{"method": "GET", "route": "GET /uploads"})
+	if e, _ := errs[0]["error"].(string); !strings.Contains(e, "refused") {
+		t.Errorf("error = %q, want the cause", e)
+	}
+}
+
+// A client that goes away mid-list (reload, closed tab) isn't a server fault.
+func TestListUploads_ClientDisconnectIsWarn(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	up := &fakeUploader{}
+	up.listErr = fmt.Errorf("uploads: list: postgres: %w", context.Canceled)
+	h, buf := loggedHandler(up, slog.LevelInfo)
+	cancel()
+	h.Routes().ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/uploads", nil).WithContext(ctx))
+
+	recs := logtest.Records(t, buf)
+	if n := len(logtest.Filter(recs, "ERROR", "")); n != 0 {
+		t.Errorf("got %d ERROR records, want 0:\n%s", n, buf)
+	}
+	if n := len(logtest.Filter(recs, "WARN", "list uploads failed")); n != 1 {
+		t.Errorf("got %d WARN list uploads failed, want 1:\n%s", n, buf)
+	}
+}
+
+func TestListBanks_NoneIsEmptyList(t *testing.T) {
+	rec := httptest.NewRecorder()
+	New(&fakeUploader{}, nilBanks{}, nil).Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/banks", nil))
+
+	assertJSONEqual(t, rec.Body.Bytes(), `{"banks": []}`)
+}
+
+type nilBanks struct{}
+
+func (nilBanks) Banks() []string { return nil }
+
+func TestListBanks(t *testing.T) {
+	rec := httptest.NewRecorder()
+	New(&fakeUploader{}, testBanks, nil).Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/banks", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("Content-Type = %q, want application/json", ct)
+	}
+	assertJSONEqual(t, rec.Body.Bytes(), `{"banks": ["abank", "sparkasse"]}`)
+}
+
+// assertJSONEqual compares two JSON documents ignoring whitespace and key order.
+func assertJSONEqual(t *testing.T, got []byte, want string) {
+	t.Helper()
+	var g, w any
+	if err := json.Unmarshal(got, &g); err != nil {
+		t.Fatalf("body %q is not JSON: %v", got, err)
+	}
+	if err := json.Unmarshal([]byte(want), &w); err != nil {
+		t.Fatalf("want %q is not JSON: %v", want, err)
+	}
+	if !reflect.DeepEqual(g, w) {
+		t.Errorf("body = %s\nwant   %s", got, want)
 	}
 }

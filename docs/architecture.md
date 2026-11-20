@@ -14,11 +14,11 @@ This document describes the v1 target. What is built so far:
 |------|-------|
 | `internal/categories` | Built: `YamlCategoryProvider`, tested |
 | `internal/categorizer` | Built: `Claude`, tool-output validation tested; live API test skipped without `ANTHROPIC_API_KEY`. `Keyword` (rule-based, no model) for offline local runs, tested |
-| `internal/parser` | Built: `Parser.ParseCSV` (pending filter, transaction IDs) + `FileMappingProvider`, tested |
+| `internal/parser` | Built: `Parser.ParseCSV` (pending filter, transaction IDs) + `FileMappingProvider` (with `Banks()` for the UI), tested |
 | `internal/storage` | Built: `PutExpense`, `SaveExpenses` (batched, retried), `KnownIDs`, tested. Not yet: `QueryExpenses` |
 | `internal/ingest` | Built: `Importer.Import` (serial loop, skips known rows), tested with fakes |
-| `internal/uploads` | Built: `Service.Upload` (claim by SHA-256, keep the file, import, record the outcome), `PostgresRecords`, `S3Blobs`, tested with fakes; Postgres and S3 integration tests run against the compose containers only ([0015](decisions/0015-upload-files-and-records.md)) |
-| `internal/handler` | Built: `POST /uploads/csv` ([0012](decisions/0012-raw-csv-upload-body.md), over `uploads.Service`), `GET /openapi.yaml` ([0014](decisions/0014-hand-written-openapi-spec.md)), request ID + access log + panic recovery middleware, tested with a fake uploader. Not yet: other endpoints, `X-API-Key` middleware |
+| `internal/uploads` | Built: `Service.Upload` (claim by SHA-256, keep the file, import, record the outcome), `Service.List`, `PostgresRecords`, `S3Blobs`, tested with fakes; Postgres and S3 integration tests run against the compose containers only ([0015](decisions/0015-upload-files-and-records.md)) |
+| `internal/handler` | Built: `POST /uploads/csv` ([0012](decisions/0012-raw-csv-upload-body.md), over `uploads.Service`), `GET /uploads`, `GET /banks`, `GET /openapi.yaml` ([0014](decisions/0014-hand-written-openapi-spec.md)), the upload web page at `/` ([0016](decisions/0016-embedded-static-web-ui.md)), request ID + access log + panic recovery middleware, tested with a fake uploader. Not yet: other endpoints, `X-API-Key` middleware |
 | `internal/logging` | Built: `New` (level/format), context attributes (`request_id`, `batch`, `batches`), tested ([0013](decisions/0013-structured-logging-with-slog.md)) |
 | `cmd/server` | Built: wires the CSV upload path, serves `localhost:8080`, graceful shutdown on SIGINT/SIGTERM, creates the `uploads` table at startup. `CATEGORIZER=fake` + the `compose.yaml` containers run it offline (README). Checked by running it |
 | `internal/mcp`, `cmd/lambda`, `cmd/mcp` | Not started |
@@ -34,6 +34,7 @@ This document describes the v1 target. What is built so far:
 │  Local machine                                                  │
 │                                                                 │
 │  cmd/mcp  ◄──── Claude Code (stdio)                             │
+│  browser  ────► cmd/server  GET / (upload page, 0016)           │
 │     │                                                           │
 │     └──── HTTPS + API key ─────────────────────────┐           │
 │                                                     │           │
@@ -239,13 +240,25 @@ All endpoints require `X-API-Key` header. Built endpoints are specified in [`ope
 | `POST` | `/expenses` | Add a single expense manually (JSON body with the expense fields) |
 | `GET` | `/expenses/summary` | Spending totals grouped by category (`from`, `to` params) |
 | `GET` | `/categories` | List configured categories |
+| `GET` | `/uploads` | The 100 most recent upload records, newest first: `upload_id`, `filename`, `bank`, `uploaded_at`, `status`, counts (`null` unless done) |
+| `GET` | `/banks` | Configured bank mapping names, sorted, the values `bank` accepts |
 | `GET` | `/openapi.yaml` | This API's OpenAPI 3.1 document |
+| `GET` | `/`, `/app.js`, `/app.css` | The upload web page and its script and styles ([0016](decisions/0016-embedded-static-web-ui.md)) |
 
 `min_amount` / `max_amount` filter the date- or category-keyed query result (a DynamoDB filter expression), so they never trigger a full scan.
 
 Amounts are EUR only in v1; multi-currency is added if needed ([0010](decisions/0010-eur-only-v1.md)).
 
 ---
+
+## Web UI
+
+`GET /` serves a single page, embedded in the binary from `internal/handler/web/` ([0016](decisions/0016-embedded-static-web-ui.md); spec: [`openspec/specs/web-ui`](../openspec/specs/web-ui/spec.md)).
+
+- **Upload form:** a bank dropdown filled from `GET /banks`, a file picker and Upload. The file's bytes go unchanged to `POST /uploads/csv?bank=…&filename=…`, and the `upload_id` and counts or the error are shown.
+- **Uploads table:** from `GET /uploads`. It reloads after every upload and on Refresh.
+
+The page files are served with `Content-Security-Policy: default-src 'self'; frame-ancestors 'none'`, and the script builds the DOM from text only, so a file name can't become markup. Screenshots of a run are in [`docs/screenshots/web-ui/`](screenshots/web-ui/).
 
 ## MCP Tools (v1)
 

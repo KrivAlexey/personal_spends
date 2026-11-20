@@ -28,6 +28,9 @@ type fakeRecords struct {
 	claims       []string // "sha256|bank|filename"
 	finished     map[string]ingest.Result
 	failed       []string
+	list         []Record
+	listErr      error
+	listLimit    int
 	failCtxErr   error // ctx.Err() seen by Fail
 	finishCtxErr error // ctx.Err() seen by Finish
 }
@@ -60,6 +63,11 @@ func (f *fakeRecords) Fail(ctx context.Context, claim Record) error {
 	f.failCtxErr = ctx.Err()
 	f.failed = append(f.failed, claim.ID)
 	return f.failErr
+}
+
+func (f *fakeRecords) List(_ context.Context, limit int) ([]Record, error) {
+	f.listLimit = limit
+	return f.list, f.listErr
 }
 
 type fakeBlobs struct {
@@ -423,6 +431,41 @@ func TestService_Upload_DebugRecords(t *testing.T) {
 			}
 			if bytes.Contains([]byte(buf.String()), []byte("secret-name")) || bytes.Contains([]byte(buf.String()), []byte(bodySum)) {
 				t.Errorf("log carries the file name or hash:\n%s", buf.String())
+			}
+		})
+	}
+}
+
+func TestService_List(t *testing.T) {
+	errList := errors.New("db down")
+	recs := []Record{{ID: "u2", Status: StatusFailed}, {ID: "u1", Status: StatusDone, Counts: counts}}
+	tests := []struct {
+		name    string
+		records *fakeRecords
+		want    []Record
+		wantErr error
+	}{
+		{name: "returns the records", records: &fakeRecords{list: recs}, want: recs},
+		{name: "wraps the error", records: &fakeRecords{listErr: errList}, wantErr: errList},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := New(tt.records, &fakeBlobs{}, &fakeImporter{}, nil).List(context.Background(), 100)
+
+			if tt.records.listLimit != 100 {
+				t.Errorf("List limit passed = %d, want 100", tt.records.listLimit)
+			}
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Errorf("List() error = %v, want errors.Is %v", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("List() error = %v", err)
+			}
+			if fmt.Sprint(got) != fmt.Sprint(tt.want) {
+				t.Errorf("List() = %+v, want %+v", got, tt.want)
 			}
 		})
 	}

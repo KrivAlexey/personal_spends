@@ -104,7 +104,7 @@ func run(ctx context.Context) error {
 	// No WriteTimeout: an upload waits on Claude for every batch.
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           handler.New(up, logger).Routes(),
+		Handler:           handler.New(up, mappings, logger).Routes(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

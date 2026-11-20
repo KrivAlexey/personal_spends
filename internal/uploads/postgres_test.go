@@ -3,6 +3,7 @@ package uploads
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"sync"
@@ -237,6 +238,56 @@ func TestPostgresRecords_StaleOwnerCannotRecordOutcome(t *testing.T) {
 
 	if err := p.Finish(ctx, cur, ingest.Result{Imported: 1}); err != nil {
 		t.Errorf("current Finish() error = %v", err)
+	}
+}
+
+func TestPostgresRecords_List(t *testing.T) {
+	p, pool := newTestRecords(t)
+	ctx := context.Background()
+
+	empty, err := p.List(ctx, 10)
+	if err != nil {
+		t.Fatalf("List() on empty table error = %v", err)
+	}
+	if empty == nil || len(empty) != 0 {
+		t.Errorf("List() on empty table = %#v, want an empty non-nil slice", empty)
+	}
+
+	// oldest, middle, newest: received an hour apart.
+	var claims []Record
+	for i, c := range []byte{'e', 'f', 'g'} {
+		rec, _, err := p.Claim(ctx, sum(c), "sparkasse", fmt.Sprintf("%d.csv", i))
+		if err != nil {
+			t.Fatalf("Claim() error = %v", err)
+		}
+		if _, err := pool.Exec(ctx, "UPDATE uploads SET uploaded_at = now() - make_interval(hours => $2) WHERE id = $1", rec.ID, 3-i); err != nil {
+			t.Fatalf("set uploaded_at: %v", err)
+		}
+		claims = append(claims, rec)
+	}
+	done := ingest.Result{Imported: 5, AlreadyKnown: 3, PendingSkipped: 2}
+	if err := p.Finish(ctx, claims[1], done); err != nil {
+		t.Fatalf("Finish() error = %v", err)
+	}
+	if err := p.Fail(ctx, claims[2]); err != nil {
+		t.Fatalf("Fail() error = %v", err)
+	}
+
+	got, err := p.List(ctx, 2)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("List(2) returned %d records, want 2", len(got))
+	}
+	if got[0].Filename != "2.csv" || got[0].Status != StatusFailed || got[0].Counts != (ingest.Result{}) {
+		t.Errorf("first = %+v, want the newest, 2.csv, failed, no counts", got[0])
+	}
+	if got[1].Filename != "1.csv" || got[1].Status != StatusDone || got[1].Counts != done {
+		t.Errorf("second = %+v, want 1.csv, done, counts %+v", got[1], done)
+	}
+	if !got[0].UploadedAt.After(got[1].UploadedAt) {
+		t.Errorf("uploaded_at not newest first: %v then %v", got[0].UploadedAt, got[1].UploadedAt)
 	}
 }
 

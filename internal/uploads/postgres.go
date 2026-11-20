@@ -17,6 +17,7 @@ import (
 type pgxAPI interface {
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 }
 
 // PostgresRecords keeps upload records in the Postgres table "uploads".
@@ -139,4 +140,21 @@ func scanRecord(row pgx.Row) (Record, error) {
 		rec.Counts = ingest.Result{Imported: *imported, AlreadyKnown: *known, PendingSkipped: *pending}
 	}
 	return rec, nil
+}
+
+// List returns up to limit records, most recently received first; an empty
+// table gives an empty, non-nil slice.
+func (p *PostgresRecords) List(ctx context.Context, limit int) ([]Record, error) {
+	rows, err := p.db.Query(ctx, `SELECT `+recordColumns+` FROM uploads ORDER BY uploaded_at DESC, id LIMIT $1`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: list uploads: %w", err)
+	}
+	recs, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Record, error) { return scanRecord(row) })
+	if err != nil {
+		return nil, fmt.Errorf("postgres: list uploads: %w", err)
+	}
+	if recs == nil {
+		recs = []Record{}
+	}
+	return recs, nil
 }
