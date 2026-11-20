@@ -53,7 +53,7 @@ terraform apply
 terraform workspace select default              # back to real AWS
 ```
 
-The containers keep nothing: the table is gone when DynamoDB Local stops; run `terraform apply` in the `local` workspace again after a restart (delete `terraform.tfstate.d/local/` first if it still lists the table).
+The containers keep nothing: the table is gone when DynamoDB Local stops. To get back to a clean, empty stack, stop the server and run `scripts/reset-local.sh`: it recreates the containers (wiping DynamoDB, Postgres and S3), deletes the stale `local` Terraform state and applies the table again. It creates the `local` workspace if needed, leaves your selected workspace alone, never reaches real AWS, and refuses to run while something answers on `localhost:8080`.
 
 Then start the server with the keyword categorizer (no model, no API key) and the emulator endpoints, and upload the fake export:
 
