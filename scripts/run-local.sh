@@ -14,10 +14,9 @@ url=http://localhost:8080/
 curl -s -o /dev/null "$url" && { echo "something already listens on $url; stop it first" >&2; exit 1; }
 ( for _ in $(seq 60); do
     if curl -fs -o /dev/null "$url"; then
-      for opener in xdg-open open; do
-        command -v "$opener" >/dev/null && { "$opener" "$url" >/dev/null 2>&1; exit; }
-      done
-      echo "open $url in your browser" >&2; exit
+      # Not `open`: on Debian/Ubuntu that is openvt.
+      xdg-open "$url" >/dev/null 2>&1 || echo "open $url in your browser" >&2
+      exit
     fi
     sleep 1
   done ) &
