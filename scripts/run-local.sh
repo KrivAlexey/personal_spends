@@ -11,7 +11,7 @@ cd "$root"
 # Open the web UI once the server answers; gives up after 60s (e.g. a build error).
 url=http://localhost:8080/
 # Fail early: with an old server on the port, the browser would open that one instead.
-curl -s -o /dev/null "$url" && { echo "something already listens on $url; stop it first" >&2; exit 1; }
+curl -s --max-time 2 -o /dev/null "$url" && { echo "something already listens on $url; stop it first" >&2; exit 1; }
 ( for _ in $(seq 60); do
     if curl -fs -o /dev/null "$url"; then
       # Not `open`: on Debian/Ubuntu that is openvt.
@@ -20,4 +20,5 @@ curl -s -o /dev/null "$url" && { echo "something already listens on $url; stop i
     fi
     sleep 1
   done ) &
-exec go run ./cmd/server
+trap 'kill $! 2>/dev/null' EXIT  # the poller ignores Ctrl-C (background job in a script)
+go run ./cmd/server
