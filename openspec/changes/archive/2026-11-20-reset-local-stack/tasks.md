@@ -16,8 +16,8 @@ No Go code: the script follows the CLAUDE.md exception for tooling (checked by a
 
 ## 3. Review and PR
 
-- [ ] 3.1 Run the go-reviewer agent on `git diff main...HEAD`, `git log --oneline main..HEAD` and the `go build ./... && go vet ./... && go test ./...` result; fix bug and risk findings
-- [ ] 3.2 Open the PR with every template section filled (tooling exception and the manual runs above as verification; Docs: README; Not verified: anything not run), `Closes #<issue>`; wait for `gh pr checks <PR> --watch` to show `ci` green
+- [x] 3.1 Run the go-reviewer agent on `git diff main...HEAD`, `git log --oneline main..HEAD` and the `go build ./... && go vet ./... && go test ./...` result; fix bug and risk findings
+- [x] 3.2 Open the PR with every template section filled (tooling exception and the manual runs above as verification; Docs: README; Not verified: anything not run), `Closes #<issue>`; wait for `gh pr checks <PR> --watch` to show `ci` green
 
 ## Workflow follow-up
 
