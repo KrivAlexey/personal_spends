@@ -110,7 +110,7 @@ func (h *Handler) uploadCSV(w http.ResponseWriter, r *http.Request) {
 		Body:     body,
 	})
 	if errors.Is(err, uploads.ErrInProgress) {
-		h.reject(w, r, http.StatusConflict, bank, "upload in progress", "the same file is being imported")
+		h.reject(w, r, http.StatusConflict, bank, "upload in progress", "the same file is being imported, or its last attempt just failed; retry shortly")
 		return
 	}
 	if errors.Is(err, parser.ErrBankMappingNotFound) {

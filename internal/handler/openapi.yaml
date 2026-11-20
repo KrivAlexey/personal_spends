@@ -58,7 +58,8 @@ paths:
                 type: string
         "409":
           description: >-
-            A byte-identical file is being imported right now. Nothing is
+            A byte-identical file is being imported right now (or, rarely, its
+            attempt failed while this request read it). Nothing is
             imported; retry once it has finished.
           content:
             text/plain:
