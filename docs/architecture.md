@@ -22,7 +22,7 @@ This document describes the v1 target. What is built so far:
 | `internal/logging` | Built: `New` (level/format), context attributes (`request_id`, `batch`, `batches`), tested ([0013](decisions/0013-structured-logging-with-slog.md)) |
 | `cmd/server` | Built: wires the CSV upload path, serves `localhost:8080`, graceful shutdown on SIGINT/SIGTERM, creates the `uploads` table at startup. `CATEGORIZER=fake` + the `compose.yaml` containers run it offline (README). Checked by running it |
 | `internal/mcp`, `cmd/lambda`, `cmd/mcp` | Not started |
-| Terraform | DynamoDB table with GSI1; uploads S3 bucket (real AWS only, S3Mock locally); workspace `local` creates the table in DynamoDB Local. Not yet: Lambda, API Gateway, RDS for `uploads` |
+| Terraform | DynamoDB table with GSI1; uploads S3 bucket (real AWS only, S3Mock locally); workspace `local` creates the table in DynamoDB Local. Not yet: Lambda, API Gateway, and with them the VPC, RDS PostgreSQL and RDS Proxy for `uploads` ([0017](decisions/0017-rds-postgres-for-uploads.md)) |
 | Configuration (below) | Read by `cmd/server`, except `API_KEY` (no auth middleware yet) and `WORKER_POOL_SIZE` (step 2) |
 
 ---
@@ -338,7 +338,7 @@ Every record logged while serving a request carries `request_id`, added from the
 1. **Worker pool:** replace the serial batch loop with a bounded pool of goroutines fed by a channel, results collected before the DynamoDB write. First step after v1 runs end to end.
 2. **Receipt / bill images:** `POST /uploads/image` stores to the uploads S3 bucket (built for CSVs, [0015](decisions/0015-upload-files-and-records.md); 30-day lifecycle on images) and a Vision call extracts `[]Transaction`, which then takes the same path as CSV rows. Adds a method back onto `Categorizer`.
 3. **SQS fan-out:** S3 event on CSV upload triggers SQS. Lambda reads SQS batches instead of the whole file. Worker pool moves from intra-Lambda goroutines to parallel Lambda invocations.
-4. **RDS PostgreSQL:** hosts the `uploads` table, which runs only locally until then ([0015](decisions/0015-upload-files-and-records.md)). `CategoryProvider` swaps from YAML to Postgres. Adds `categories`, `vendor_rules`, and `budgets` tables. Lambda gets RDS Proxy for connection pooling. Requires VPC in Terraform.
+4. **RDS PostgreSQL:** the database itself (VPC, private RDS instance, RDS Proxy) comes earlier, with `cmd/lambda`, because the deployed upload path needs the `uploads` table ([0017](decisions/0017-rds-postgres-for-uploads.md)). This step is what remains: `CategoryProvider` swaps from YAML to Postgres, adding the `categories`, `vendor_rules` and `budgets` tables to the same database.
 5. **Bedrock:** `Categorizer` swaps from Anthropic SDK to `BedrockCategorizer` using `InvokeModelWithResponseStream`. Model ID configurable via env var, no changes in callers.
 6. **MCP SSE transport:** make the MCP server reachable from claude.ai and other remote agents.
 7. **On-demand GPU:** vLLM on spot EC2, brought up only during processing, for self-hosted model experiments (`VLLMCategorizer`).

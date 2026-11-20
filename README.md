@@ -94,4 +94,4 @@ terraform plan
 terraform apply
 ```
 
-Currently this creates the DynamoDB table and the uploads S3 bucket (its name is the `uploads_bucket_name` output, for `UPLOADS_BUCKET`). PostgreSQL isn't deployed yet (backlog: RDS).
+Currently this creates the DynamoDB table and the uploads S3 bucket (its name is the `uploads_bucket_name` output, for `UPLOADS_BUCKET`). PostgreSQL isn't deployed yet: it comes as RDS with the Lambda deployment ([0017](docs/decisions/0017-rds-postgres-for-uploads.md)).
