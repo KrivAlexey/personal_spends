@@ -18,6 +18,19 @@
         "dynamodb:ListTagsOfResource"
       ],
       "Resource": "arn:aws:dynamodb:eu-central-1:<ACCOUNT_ID>:table/personal-spends-expenses"
+    },
+    {
+      "Sid": "TerraformManageUploadsBucket",
+      "Effect": "Allow",
+      "Action": [
+        "s3:CreateBucket",
+        "s3:DeleteBucket",
+        "s3:ListBucket",
+        "s3:Get*",
+        "s3:PutBucketTagging",
+        "s3:PutBucketPublicAccessBlock"
+      ],
+      "Resource": "arn:aws:s3:::personal-spends-uploads-*"
     }
   ]
 }

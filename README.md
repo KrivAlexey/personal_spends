@@ -5,7 +5,7 @@
 
 Personal expense tracking with AI categorization. Upload a bank CSV export; Claude categorizes each transaction; results land in DynamoDB and are queryable through a REST API and a local MCP server for AI agents.
 
-**Status:** work in progress. The core packages (CSV parsing, categorization, categories, DynamoDB storage) and the CSV upload handler are built and tested. The local HTTP server (`cmd/server`) runs it end to end. The other HTTP handlers, the Lambda and MCP entry points, the MCP server and the Lambda / API Gateway infrastructure are not built yet. See [Implementation Status](docs/architecture.md#implementation-status).
+**Status:** work in progress. The core packages (CSV parsing, categorization, categories, DynamoDB storage, upload records in PostgreSQL with the files in S3) and the CSV upload handler are built and tested. The local HTTP server (`cmd/server`) runs it end to end. The other HTTP handlers, the Lambda and MCP entry points, the MCP server and the Lambda / API Gateway infrastructure are not built yet. See [Implementation Status](docs/architecture.md#implementation-status).
 
 ## Documentation
 
@@ -16,7 +16,7 @@ Personal expense tracking with AI categorization. Upload a bank CSV export; Clau
 
 ## Setup
 
-1. **Install tooling:** Go 1.26+, [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html), [Terraform 1.6+](https://developer.hashicorp.com/terraform/install).
+1. **Install tooling:** Go 1.26+, [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html), [Terraform 1.6+](https://developer.hashicorp.com/terraform/install), Docker with the [Compose plugin](https://docs.docker.com/compose/install/linux/) (for the local Postgres, S3 and DynamoDB).
 
 2. **Create an IAM user for Terraform.** Don't use your AWS root account or its access keys. Create a dedicated IAM user and attach only the permissions needed for the resources in `terraform/main.tf`. They're listed in [`terraform/iam-policy.json`](terraform/iam-policy.json): paste it into the IAM console's JSON policy editor, replacing `<ACCOUNT_ID>` with your AWS account ID. Update the file whenever `main.tf` gains new resource types.
 
@@ -38,30 +38,34 @@ go run ./cmd/server          # from the repo root; serves localhost:8080
 curl -X POST 'localhost:8080/uploads/csv?bank=sparkasse' --data-binary @export.csv
 ```
 
-An upload calls Claude and writes to the DynamoDB table (`DYNAMODB_TABLE`, default `personal-spends-expenses`), so it costs money and needs the table from `terraform apply`. Other settings are listed in [`docs/architecture.md`](docs/architecture.md#configuration). The API's OpenAPI document is served at `localhost:8080/openapi.yaml`.
+The server also needs `DATABASE_URL` (PostgreSQL, for upload records) and `UPLOADS_BUCKET` (S3, for the uploaded files). PostgreSQL has no AWS deployment yet, so use the compose one below. An upload calls Claude and writes to the DynamoDB table (`DYNAMODB_TABLE`, default `personal-spends-expenses`), so it costs money and needs the table from `terraform apply`. Posting the same bytes again returns the first upload's `upload_id` and counts without importing anything ([0015](docs/decisions/0015-upload-files-and-records.md)). Other settings are listed in [`docs/architecture.md`](docs/architecture.md#configuration). The API's OpenAPI document is served at `localhost:8080/openapi.yaml`.
 
 ### Offline: no Anthropic, no AWS
 
-Run [DynamoDB Local](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DynamoDBLocal.html) on port 8000 (Docker `amazon/dynamodb-local`, or the jar with Java 17+), then create the table in it. The Terraform workspace `local` targets `localhost:8000` with fake credentials and keeps its own state, apart from the real one:
+`compose.yaml` starts [DynamoDB Local](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DynamoDBLocal.html) on port 8000, PostgreSQL on 5432 (user, password and database `spends`) and [S3Mock](https://github.com/adobe/S3Mock) on 9090 with the bucket `personal-spends-uploads`, all in memory. Then create the DynamoDB table: the Terraform workspace `local` targets `localhost:8000` with fake credentials and keeps its own state, apart from the real one. The server creates the Postgres table itself.
 
 ```bash
-docker run -d -p 8000:8000 amazon/dynamodb-local -jar DynamoDBLocal.jar -inMemory
+docker compose up -d
 cd terraform && terraform workspace new local   # once; later: terraform workspace select local
 terraform apply
 terraform workspace select default              # back to real AWS
 ```
 
-With `-inMemory` the table is gone when the emulator stops; run `terraform apply` in the `local` workspace again after a restart (delete `terraform.tfstate.d/local/` first if it still lists the table).
+The containers keep nothing: the table is gone when DynamoDB Local stops; run `terraform apply` in the `local` workspace again after a restart (delete `terraform.tfstate.d/local/` first if it still lists the table).
 
-Then start the server with the keyword categorizer (no model, no API key) and the emulator endpoint, and upload the fake export:
+Then start the server with the keyword categorizer (no model, no API key) and the emulator endpoints, and upload the fake export:
 
 ```bash
-CATEGORIZER=fake AWS_ENDPOINT_URL_DYNAMODB=http://localhost:8000 AWS_ACCESS_KEY_ID=local AWS_SECRET_ACCESS_KEY=local go run ./cmd/server
-curl -X POST 'localhost:8080/uploads/csv?bank=sparkasse' --data-binary @samples/sparkasse_fake.csv
+CATEGORIZER=fake AWS_ACCESS_KEY_ID=local AWS_SECRET_ACCESS_KEY=local \
+  AWS_ENDPOINT_URL_DYNAMODB=http://localhost:8000 AWS_ENDPOINT_URL_S3=http://localhost:9090 \
+  UPLOADS_BUCKET=personal-spends-uploads DATABASE_URL=postgres://spends:spends@localhost:5432/spends \
+  go run ./cmd/server
+curl -X POST 'localhost:8080/uploads/csv?bank=sparkasse&filename=sparkasse_fake.csv' --data-binary @samples/sparkasse_fake.csv
 aws dynamodb scan --table-name personal-spends-expenses --endpoint-url http://localhost:8000
+docker compose exec postgres psql -U spends -c 'SELECT * FROM uploads'
 ```
 
-The first upload imports 5 rows and skips 1 pending; a second upload reports them as `already_known`.
+The first upload imports 5 rows and skips 1 pending. Posting the same file again returns the same `upload_id` and counts without importing anything. A changed file whose rows overlap reports the overlapping rows as `already_known`.
 
 To skip typing the variables, put them in `.env.local` (gitignored) and run `scripts/run-local.sh`; pass another env file as the first argument, e.g. `scripts/run-local.sh .env`. The file is sourced as shell code, so quote values that contain spaces.
 
@@ -71,7 +75,13 @@ To skip typing the variables, put them in `.env.local` (gitignored) and run `scr
 go build ./... && go vet ./... && go test ./...
 ```
 
-The live Claude API test runs only when `ANTHROPIC_API_KEY` is set.
+The live Claude API test runs only when `ANTHROPIC_API_KEY` is set. The PostgreSQL and S3 integration tests run only against the compose containers:
+
+```bash
+TEST_DATABASE_URL=postgres://spends:spends@localhost:5432/spends TEST_S3_ENDPOINT=http://localhost:9090 go test ./internal/uploads
+```
+
+They empty the `uploads` table, so don't point `TEST_DATABASE_URL` at a database you want to keep.
 
 ## Deploy
 
@@ -82,4 +92,4 @@ terraform plan
 terraform apply
 ```
 
-Currently this creates only the DynamoDB table.
+Currently this creates the DynamoDB table and the uploads S3 bucket (its name is the `uploads_bucket_name` output, for `UPLOADS_BUCKET`). PostgreSQL isn't deployed yet (backlog: RDS).

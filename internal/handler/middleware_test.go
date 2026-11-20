@@ -15,9 +15,9 @@ import (
 
 // loggedHandler returns a Handler over imp that logs JSON at level into the
 // returned buffer.
-func loggedHandler(imp importer, level slog.Level) (*Handler, *logtest.Buffer) {
+func loggedHandler(up uploader, level slog.Level) (*Handler, *logtest.Buffer) {
 	logger, buf := logtest.NewLogger(level)
-	return New(imp, logger), buf
+	return New(up, logger), buf
 }
 
 // accessRecord returns the only INFO access record, failing otherwise.
@@ -43,25 +43,25 @@ func TestAccessRecord(t *testing.T) {
 	tests := []struct {
 		name string
 		req  *http.Request
-		imp  *fakeImporter
+		imp  *fakeUploader
 		want map[string]any
 	}{
 		{
 			name: "successful upload",
 			req:  uploadRequest("/uploads/csv?bank=sparkasse", csvBody),
-			imp:  &fakeImporter{},
+			imp:  &fakeUploader{},
 			want: map[string]any{"method": "POST", "route": "POST /uploads/csv", "status": 200.0},
 		},
 		{
 			name: "failed upload",
 			req:  uploadRequest("/uploads/csv?bank=sparkasse", csvBody),
-			imp:  &fakeImporter{err: io.ErrClosedPipe},
+			imp:  &fakeUploader{err: io.ErrClosedPipe},
 			want: map[string]any{"method": "POST", "route": "POST /uploads/csv", "status": 500.0},
 		},
 		{
 			name: "rejected upload",
 			req:  uploadRequest("/uploads/csv", csvBody),
-			imp:  &fakeImporter{},
+			imp:  &fakeUploader{},
 			want: map[string]any{"method": "POST", "route": "POST /uploads/csv", "status": 400.0},
 		},
 	}
@@ -82,7 +82,7 @@ func TestAccessRecord(t *testing.T) {
 
 func TestAccessRecord_UnknownPathIsNotLogged(t *testing.T) {
 	path := "/REWE-23,45" + strings.Repeat("A", 100*1024)
-	h, buf := loggedHandler(&fakeImporter{}, slog.LevelDebug)
+	h, buf := loggedHandler(&fakeUploader{}, slog.LevelDebug)
 	rec := httptest.NewRecorder()
 	h.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 
@@ -96,7 +96,7 @@ func TestAccessRecord_UnknownPathIsNotLogged(t *testing.T) {
 var requestIDFormat = regexp.MustCompile(`^[0-9a-f]{16}$`)
 
 func TestRequestID(t *testing.T) {
-	imp := &fakeImporter{err: io.ErrClosedPipe}
+	imp := &fakeUploader{err: io.ErrClosedPipe}
 	h, buf := loggedHandler(imp, slog.LevelInfo)
 	routes := h.Routes()
 	routes.ServeHTTP(httptest.NewRecorder(), uploadRequest("/uploads/csv?bank=sparkasse", csvBody))
@@ -122,10 +122,10 @@ func TestRequestID(t *testing.T) {
 }
 
 // panicServer serves h's middleware around a mux with test routes, plus the
-// real upload route over imp.
-func panicServer(t *testing.T, imp importer) (*httptest.Server, *logtest.Buffer) {
+// real upload route over up.
+func panicServer(t *testing.T, up uploader) (*httptest.Server, *logtest.Buffer) {
 	t.Helper()
-	h, buf := loggedHandler(imp, slog.LevelInfo)
+	h, buf := loggedHandler(up, slog.LevelInfo)
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /uploads/csv", h.uploadCSV)
 	mux.HandleFunc("GET /after-write", func(w http.ResponseWriter, _ *http.Request) {
@@ -148,7 +148,7 @@ func panicServer(t *testing.T, imp importer) (*httptest.Server, *logtest.Buffer)
 }
 
 func TestPanic_BeforeResponse(t *testing.T) {
-	imp := &fakeImporter{onImport: func(context.Context) error { panic("boom REWE") }}
+	imp := &fakeUploader{onUpload: func(context.Context) error { panic("boom REWE") }}
 	srv, buf := panicServer(t, imp)
 
 	resp, err := http.Post(srv.URL+"/uploads/csv?bank=sparkasse", "text/csv", strings.NewReader(csvBody))
@@ -179,7 +179,7 @@ func TestPanic_BeforeResponse(t *testing.T) {
 }
 
 func TestPanic_AfterResponseStarted(t *testing.T) {
-	srv, buf := panicServer(t, &fakeImporter{})
+	srv, buf := panicServer(t, &fakeUploader{})
 
 	resp, err := http.Get(srv.URL + "/after-write")
 	if err != nil {
@@ -203,7 +203,7 @@ func TestPanic_AfterResponseStarted(t *testing.T) {
 }
 
 func TestPanic_DeliberateAbort(t *testing.T) {
-	srv, buf := panicServer(t, &fakeImporter{})
+	srv, buf := panicServer(t, &fakeUploader{})
 
 	resp, err := http.Get(srv.URL + "/abort")
 	if err == nil {
@@ -221,7 +221,7 @@ func TestPanic_DeliberateAbort(t *testing.T) {
 // A 1xx is informational: the response hasn't started, so a panic still gets
 // a 500.
 func TestPanic_AfterInformationalResponse(t *testing.T) {
-	srv, buf := panicServer(t, &fakeImporter{})
+	srv, buf := panicServer(t, &fakeUploader{})
 
 	resp, err := http.Get(srv.URL + "/early-hints")
 	if err != nil {
