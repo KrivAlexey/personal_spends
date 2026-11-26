@@ -86,6 +86,8 @@ A change is done when all of these hold:
 - Branch off up-to-date `main`: `feature/<slug>`, `docs/<slug>` or `chore/<slug>`. If the change depends on an unmerged PR, branch off that PR's branch and target it with the PR.
 - Commit messages and PR titles start with the issue number: `#47 short description`. The PR body ends with `Closes #<issue>`.
 - Never commit to `main` directly, never force-push a shared branch, and merge only when the owner asks.
+- Before any commit, run `git branch --show-current`. If it is `main`, create the feature branch first, as a separate step.
+- After a PR merges, switch to `main` and pull before starting new work, so follow-up commits don't land on a stale or merged branch.
 
 ## Model selection
 
