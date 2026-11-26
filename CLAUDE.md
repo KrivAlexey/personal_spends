@@ -85,7 +85,8 @@ A change is done when all of these hold:
 - One issue per distinct change, docs-only changes included. Unrelated changes get separate issues and separate PRs, never a ride-along on an existing branch.
 - Branch off up-to-date `main`: `feature/<slug>`, `docs/<slug>` or `chore/<slug>`. If the change depends on an unmerged PR, branch off that PR's branch and target it with the PR.
 - Commit messages and PR titles start with the issue number: `#47 short description`. The PR body ends with `Closes #<issue>`.
-- Never commit to `main` directly: before any commit, run `git branch --show-current`, and if it is `main` or empty (detached HEAD), run `git fetch origin && git switch -c <type>/<slug> origin/main` (or `origin/<pr-branch>` for a change stacked on an unmerged PR) before staging. Never force-push a shared branch, and merge only when the owner asks.
+- Never commit to `main` directly, never force-push a shared branch, and merge only when the owner asks.
+- Before any commit, run `git branch --show-current`. If it is `main` or empty (detached HEAD), run `git fetch origin && git switch --no-track -c <type>/<slug> origin/main` (or `origin/<pr-branch>` for a change stacked on an unmerged PR) before staging; uncommitted edits move to the new branch, which is intended. Push it with `git push -u origin HEAD`.
 - After a PR merges, run `git switch main && git pull --ff-only` before starting new work, so follow-up commits don't land on a stale or merged branch. If either command fails (uncommitted changes, stray commits on local `main`, network or auth), stop and ask; never stash, reset or merge to get past it. A change stacked on an unmerged PR branches off that PR's branch instead, as the "Branch off up-to-date `main`" rule says.
 
 ## Model selection
