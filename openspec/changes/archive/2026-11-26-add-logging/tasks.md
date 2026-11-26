@@ -33,5 +33,5 @@
 ## 4. Docs and ship
 
 - [x] 4.1 `docs/architecture.md`: `LOG_LEVEL`/`LOG_FORMAT` in Configuration, a short Logging section, and `internal/logging` in Implementation Status. Remove "logging of 500s (#88)" from the handler's "Not yet"
-- [ ] 4.2 Open the PR for #88 (`Closes #88`), `ci` green
-- [ ] 4.3 Archive this change once merged
+- [x] 4.2 Open the PR for #88 (`Closes #88`), `ci` green
+- [x] 4.3 Archive this change once merged
