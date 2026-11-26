@@ -87,8 +87,8 @@ A change is done when all of these hold:
 - Commit messages and PR titles start with the issue number: `#47 short description`. The PR body ends with `Closes #<issue>`.
 - Never commit to `main` directly, never force-push a shared branch, and merge only when the owner asks.
 - Before any commit, check the branch:
-  - `git branch --show-current` prints `main` or nothing (detached HEAD), or `gh pr view --json state -q .state` prints `MERGED`: branch first.
-  - Branch first means `git fetch origin && git switch --no-track -c <type>/<slug> origin/main`, or `origin/<pr-branch>` for a change stacked on an unmerged PR. Uncommitted edits move to the new branch, which is intended.
+  - `git branch --show-current` prints `main` or nothing (detached HEAD), or `gh pr view --json state -q .state` prints `MERGED`: branch first. A non-zero exit from `gh pr view` ("no pull requests found") means the branch has no PR yet, so commit.
+  - Branch first means `git fetch origin && git switch --no-track -c <type>/<slug> origin/main`, or `origin/<pr-branch>` for a change stacked on an unmerged PR. Uncommitted edits move to the new branch, which is intended. If the switch aborts because they conflict with the new base, stop and ask, as after a merge.
   - Push a new branch with `git push -u origin HEAD`.
 - After a PR merges, run `git switch main && git pull --ff-only` before starting new work, so follow-up commits don't land on a stale or merged branch. If either command fails (uncommitted changes, stray commits on local `main`, network or auth), stop and ask; never stash, reset or merge to get past it. A change stacked on an unmerged PR branches off that PR's branch instead, as the "Branch off up-to-date `main`" rule says.
 
