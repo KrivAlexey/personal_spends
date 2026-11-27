@@ -57,8 +57,12 @@ You can't ask the owner anything. If you can't start the go-test-writer or go-re
 
 ### 4.1 Branch
 
+The branch name must be new, so no merged or closed PR used it (CLAUDE.md git workflow). If `ls-remote` prints a branch or `gh pr list` prints anything but `[]`, pick another slug.
+
 ```bash
 git fetch origin
+git ls-remote --heads origin <type>/<slug>
+gh pr list --head <type>/<slug> --state all --json number,state
 git switch --no-track -c <type>/<slug> <base>   # feature/, docs/ or chore/; base = origin/main or origin/<previous lane branch>
 git push -u origin HEAD
 ```
@@ -145,7 +149,7 @@ First bring the branch up to date, so a PR that merges second still applies clea
 git fetch origin && git merge --no-edit origin/<base>   # base = main, or the previous lane branch
 ```
 
-Already up to date → nothing to do. A conflict only in docs: resolve it, commit, push, and go back to 4.8 (the 5-round cap still counts). A conflict in code: `git merge --abort` and report it as a blocker.
+Already up to date → nothing to do. Merged cleanly, or a conflict only in docs that you resolved and committed: push, and go back to 4.8, so `ci` runs on the merged commit (the 5-round cap still counts). Report only a `ci` result for the branch's last commit. A conflict in code: `git merge --abort` and report it as a blocker.
 
 Then one line per issue: issue, branch, PR URL, `ci` result on the last commit, open review threads, blocker (or "none"), and what is in **Not verified**.
 
