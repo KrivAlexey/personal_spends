@@ -51,11 +51,14 @@
       "Bash(grep * .env*)",
       "Bash(source .env*)",
       "Bash(gh pr merge*)",
-      "Bash(gh api *merge*)",
       "Bash(git push * main)",
       "Bash(git push * main*)",
       "Bash(git push * *:main)",
-      "Bash(git push * HEAD:main)"
+      "Bash(git push * HEAD:main)",
+      "Bash(gh api *pulls/*/merge*)",
+      "Bash(gh api *repos/*/merges*)",
+      "Bash(gh api graphql*mergePullRequest*)",
+      "Bash(gh api graphql*AutoMerge*)"
     ]
   }
 }
