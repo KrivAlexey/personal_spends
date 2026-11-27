@@ -23,7 +23,12 @@ gh issue list --state open --label ready --json number,title,labels,body   # for
 gh issue view <N> --json number,title,state,labels,body,comments           # for explicit numbers
 ```
 
-- Skip, and list in the report, any issue that is closed, labeled `blocked` or `needs-clarification`, or already has an open PR (`gh pr list --state open --search "<N> in:title"`).
+- Skip, and list in the report, any issue that is closed, labeled `blocked` or `needs-clarification`, or already has an open PR whose title starts with `#<N>` or whose body says `Closes #<N>`:
+
+```bash
+gh pr list --state open --limit 200 --json number,title,body \
+  --jq '.[] | select((.title | test("^#<N>\\b")) or (.body | test("(?i)closes #<N>\\b"))) | .number'
+```
 - An explicit number without the `ready` label: proceed, but say so in the report.
 
 ## 2. Plan the lanes (main session)
@@ -31,6 +36,8 @@ gh issue view <N> --json number,title,state,labels,body,comments           # for
 Issues that touch the same files, or where one depends on another, run **in one lane, one after another**, each on its own branch and PR. A later issue in a lane stacks on the earlier one's branch (CLAUDE.md "Branch off up-to-date `main`"). Independent issues get their own lanes and run in parallel.
 
 Decide overlap from the issue bodies and `git grep` on the paths and symbols they name. Example: #65, #102, #103 all edit `internal/categorizer/claude.go`, and #100's 50-row case needs #65, so they form one lane: 65 → 102 → 103 → 100.
+
+Shared docs (`docs/architecture.md` status and backlog, `README.md`) don't force one lane: almost every issue edits them. Instead, each agent merges the latest base into its branch right before it reports (4.10), so whichever PR merges second still applies cleanly.
 
 Show the lanes to the owner in one short table before launching. Then launch.
 
@@ -46,7 +53,7 @@ Do not start a lane's next issue yourself while its agent runs. Wait for the com
 
 ## 4. Per issue (subagent, inside its worktree)
 
-You can't ask the owner anything. When a rule below says "stop", stop work on this issue, push what you have if it builds, and report the blocker. In a lane, a stopped issue stops the issues after it.
+You can't ask the owner anything. If you can't start the go-test-writer or go-reviewer agents or call a skill, read its file (`.claude/agents/<name>.md`, `.claude/skills/<name>/SKILL.md`) and do its work yourself, and say so in the report. Never skip a step silently. When a rule below says "stop", stop work on this issue, push what you have if it builds, and report the blocker. In a lane, a stopped issue stops the issues after it.
 
 ### 4.1 Branch
 
@@ -108,7 +115,7 @@ If 4.2 created or used a change and all its tasks are done: archive it with the 
 
 ### 4.8 PR and CI
 
-Follow `.claude/skills/ship/SKILL.md` step 5: open the PR with every section of `.github/pull_request_template.md` filled, ending with `Closes #N` and the attribution line. A stacked PR says so in its first line.
+Follow `.claude/skills/ship/SKILL.md` step 5: open the PR with every section of `.github/pull_request_template.md` filled, ending with `Closes #N` and the attribution line. A stacked PR says so in its first line, names the PR it must merge after, and notes that `Closes #N` only fires once it's retargeted to `main`.
 
 ```bash
 gh pr checks <PR> --watch
@@ -132,7 +139,15 @@ After the last push, re-verify the PR body (4.8) once more.
 
 ### 4.10 Report to the main session
 
-One line per issue: issue, branch, PR URL, `ci` result on the last commit, open review threads, blocker (or "none"), and what is in **Not verified**.
+First bring the branch up to date, so a PR that merges second still applies cleanly. Merge, don't rebase: a rebase would need a force-push.
+
+```bash
+git fetch origin && git merge --no-edit origin/<base>   # base = main, or the previous lane branch
+```
+
+Already up to date → nothing to do. A conflict only in docs: resolve it, commit, push, and go back to 4.8 (the 5-round cap still counts). A conflict in code: `git merge --abort` and report it as a blocker.
+
+Then one line per issue: issue, branch, PR URL, `ci` result on the last commit, open review threads, blocker (or "none"), and what is in **Not verified**.
 
 ## 5. Report (main session)
 
@@ -140,5 +155,7 @@ When all lanes finish, give the owner one table:
 
 | Issue | PR | CI | Review threads open | Blocker needing your decision |
 |---|---|---|---|---|
+
+For each stacked lane, give the merge order (e.g. `#151 → #152 → #153`): merge them in that order, with a merge commit rather than a squash, and retarget each next PR to `main` once the one before merges. A squash merge deletes the history the next PR is built on, and its diff then shows conflicts.
 
 Then list the skipped issues with the reason. **Never merge.** Never relabel issues unless asked.
