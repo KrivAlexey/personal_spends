@@ -86,11 +86,11 @@ A change is done when all of these hold:
 - Branch off up-to-date `main`: `feature/<slug>`, `docs/<slug>` or `chore/<slug>`. If the change depends on an unmerged PR, branch off that PR's branch and target it with the PR.
 - Commit messages and PR titles start with the issue number: `#47 short description`. The PR body ends with `Closes #<issue>`.
 - Never commit to `main` directly, never force-push a shared branch, and merge only when the owner asks.
-- Before any commit, check the branch:
-  - `git branch --show-current` prints `main` or nothing (detached HEAD), or `gh pr view --json state -q .state` prints `MERGED`: branch first. If `gh pr view` fails with `no pull requests found for branch`, the branch has no PR yet, so commit; any other failure (auth, network, rate limit) means stop and ask.
-  - On `main` with commits that aren't on `origin/main` (`git log origin/main..main` prints anything): stop and ask before branching, because branching from `origin/main` would leave them behind.
-  - Branch first means `git fetch origin && git switch --no-track -c <type>/<slug> origin/main`, or `origin/<pr-branch>` for a change stacked on an unmerged PR. Uncommitted edits move to the new branch, which is intended. If the switch aborts because they conflict with the new base, stop and ask, as after a merge.
-  - Push a new branch with `git push -u origin HEAD`.
+- Before any commit, check the branch. This is the procedure behind the two rules above; branch names follow "Branch off up-to-date `main`".
+  - Branch first if `git branch --show-current` prints `main` or nothing (detached HEAD).
+  - Otherwise run `gh pr list --head <branch> --state all --json state -q '.[].state'`. Nothing or `OPEN`: commit. `MERGED` or `CLOSED`: branch first. The command failing (auth, network, rate limit): stop and ask.
+  - Branch first: `git fetch origin`, pick the base (`origin/main`, or `origin/<pr-branch>` for a change stacked on an unmerged PR), and if `git log <base>..HEAD` prints anything, stop and ask, because those commits would be left behind. Then `git switch --no-track -c <type>/<slug> <base>` (`<type>` is `feature`, `docs` or `chore`) and push with `git push -u origin HEAD`.
+  - Uncommitted edits move to the new branch, which is intended. If the switch aborts because they conflict with the base, stop and ask.
 - After a PR merges, run `git switch main && git pull --ff-only` before starting new work, so follow-up commits don't land on a stale or merged branch. If either command fails (uncommitted changes, stray commits on local `main`, network or auth), stop and ask; never stash, reset or merge to get past it. A change stacked on an unmerged PR branches off that PR's branch instead, as the "Branch off up-to-date `main`" rule says.
 
 ## Model selection
