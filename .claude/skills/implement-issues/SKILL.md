@@ -1,6 +1,6 @@
 ---
 name: implement-issues
-description: Implement GitHub issues end to end in parallel worktrees, one subagent per lane of independent issues, from failing tests to a green PR. Use when the owner says "/implement-issues", "implement issue 65", "implement issues 65 102", or "implement all ready issues".
+description: Implement GitHub issues end to end: an Opus agent groups them into lanes, then one Sonnet agent per lane implements them in its own worktree, from failing tests to a green PR. Use when the owner says "/implement-issues", "implement issue 65", "implement issues 65 102", or "implement all ready issues".
 ---
 
 # /implement-issues
@@ -34,7 +34,14 @@ gh pr list --state open --limit 200 --json number,title,body \
 ```
 - An explicit number without the `ready` label: proceed, but say so in the report.
 
-## 2. Plan the lanes (main session)
+## 2. Plan the lanes (orchestrator agent, Opus)
+
+The main session doesn't group the issues itself. It starts one planning agent in the foreground: `Agent` with `model: "opus"`, `subagent_type: "Plan"` (read-only), and no worktree. Give it the selected issues (in the marked data block from section 3) and the rules below, and ask it to return only the lane table:
+
+| Lane | Issues, in order | Shared files or dependency | Why |
+|---|---|---|---|
+
+Rules for the planner:
 
 Issues that touch the same files, or where one depends on another, run **in one lane, one after another**, each on its own branch and PR. A later issue in a lane stacks on the earlier one's branch (CLAUDE.md "Branch off up-to-date `main`"). Independent issues get their own lanes and run in parallel.
 
@@ -42,11 +49,11 @@ Decide overlap from the issue bodies and `git grep` on the paths and symbols the
 
 Shared docs (`docs/architecture.md` status and backlog, `README.md`) don't force one lane: almost every issue edits them. Instead, each agent merges the latest base into its branch right before it reports (4.10), so whichever PR merges second still applies cleanly.
 
-Show the lanes to the owner in one short table before launching. Then launch.
+Show the planner's table to the owner and **wait for their OK** before launching: parallel agents cost real tokens, and a wrong grouping produces conflicting PRs. Apply any regrouping the owner asks for, without re-running the planner.
 
 ## 3. Launch (main session)
 
-One `Agent` call per lane, all in one message, `isolation: "worktree"`, run in the background. Give each agent:
+One `Agent` call per lane, all in one message, `model: "sonnet"`, `isolation: "worktree"`, run in the background. The lane agents do all the implementation; the main session and the Opus planner write no code. Give each agent:
 
 - the lane's issue numbers, in order, with titles and bodies
 - the base for the first branch (`origin/main`)
