@@ -111,6 +111,161 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/BankList"
+  /expenses:
+    get:
+      operationId: listExpenses
+      summary: Query expenses
+      description: >-
+        Stored expenses, newest booking date first. Behavior is specified in
+        openspec/specs/rest-api.
+      parameters:
+        - name: from
+          in: query
+          description: Earliest booking date, inclusive.
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          description: Latest booking date, inclusive.
+          schema:
+            type: string
+            format: date
+        - name: category
+          in: query
+          description: Only this category.
+          schema:
+            type: string
+        - name: min_amount
+          in: query
+          description: Smallest amount, inclusive. Expenses are negative.
+          schema:
+            type: number
+        - name: max_amount
+          in: query
+          description: Largest amount, inclusive.
+          schema:
+            type: number
+        - name: limit
+          in: query
+          description: Most expenses to return.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        "200":
+          description: Matching expenses, possibly none.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExpenseList"
+        "400":
+          description: A parameter is malformed, or a range is inverted.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "500":
+          description: The expenses could not be read. The body does not contain the internal error.
+          content:
+            text/plain:
+              schema:
+                type: string
+    post:
+      operationId: addExpense
+      summary: Add an expense by hand
+      description: >-
+        Stores one expense. The server sets currency (EUR), confidence (1),
+        source (manual), created_at and a new id. The category must be one of
+        GET /categories.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewExpense"
+      responses:
+        "201":
+          description: The stored expense.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Expense"
+        "400":
+          description: The body is not a valid expense, or its category is not configured. Nothing is stored.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "413":
+          description: The body is larger than 64 KiB.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "500":
+          description: The expense could not be stored. The body does not contain the internal error.
+          content:
+            text/plain:
+              schema:
+                type: string
+  /expenses/summary:
+    get:
+      operationId: getExpenseSummary
+      summary: Spending totals per category
+      description: Sums every expense in the date range, per category, sorted by category name.
+      parameters:
+        - name: from
+          in: query
+          description: Earliest booking date, inclusive.
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          description: Latest booking date, inclusive.
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Totals, empty when nothing matches.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Summary"
+        "400":
+          description: A date is malformed, or from is after to.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "500":
+          description: The expenses could not be read. The body does not contain the internal error.
+          content:
+            text/plain:
+              schema:
+                type: string
+  /categories:
+    get:
+      operationId: listCategories
+      summary: Configured categories
+      description: The categories an expense can have.
+      responses:
+        "200":
+          description: Categories.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CategoryList"
+        "500":
+          description: The categories could not be read. The body does not contain the internal error.
+          content:
+            text/plain:
+              schema:
+                type: string
   /:
     get:
       operationId: getWebPage
@@ -220,3 +375,100 @@ components:
           type: array
           items:
             type: string
+    Expense:
+      type: object
+      required: [id, date, amount, currency, merchant, raw_description, category, confidence, source, created_at]
+      properties:
+        id:
+          type: string
+        date:
+          type: string
+          format: date
+          description: Booking date.
+        amount:
+          type: number
+          description: Negative for spending.
+        currency:
+          type: string
+        merchant:
+          type: string
+        raw_description:
+          type: string
+        category:
+          type: string
+        confidence:
+          type: number
+          description: The categorizer's confidence, 1 for a manual expense.
+        source:
+          type: string
+          description: Bank name from the mapping, or manual.
+        created_at:
+          type: string
+          format: date-time
+    ExpenseList:
+      type: object
+      required: [expenses]
+      properties:
+        expenses:
+          type: array
+          items:
+            $ref: "#/components/schemas/Expense"
+    NewExpense:
+      type: object
+      additionalProperties: false
+      required: [date, amount, merchant, category]
+      properties:
+        date:
+          type: string
+          format: date
+        amount:
+          type: number
+          description: Not 0; negative for spending.
+        merchant:
+          type: string
+          minLength: 1
+        raw_description:
+          type: string
+        category:
+          type: string
+          description: One of GET /categories.
+    Summary:
+      type: object
+      required: [categories, total, count]
+      properties:
+        categories:
+          type: array
+          items:
+            $ref: "#/components/schemas/SummaryEntry"
+        total:
+          type: number
+          description: Sum over every expense in the range, rounded to cents.
+        count:
+          type: integer
+    SummaryEntry:
+      type: object
+      required: [category, total, count]
+      properties:
+        category:
+          type: string
+        total:
+          type: number
+          description: Rounded to cents.
+        count:
+          type: integer
+    CategoryList:
+      type: object
+      required: [categories]
+      properties:
+        categories:
+          type: array
+          items:
+            $ref: "#/components/schemas/Category"
+    Category:
+      type: object
+      required: [name, description]
+      properties:
+        name:
+          type: string
+        description:
+          type: string

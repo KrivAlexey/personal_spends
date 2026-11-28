@@ -32,6 +32,9 @@ func sortKey(date time.Time, id string) string {
 	return fmt.Sprintf("%s#%s", date.Format("2006-01-02"), id)
 }
 
+// categoryKey is the GSI1PK of a category: "CAT#<category>".
+func categoryKey(category string) string { return "CAT#" + category }
+
 // newExpenseItem maps a domain Expense onto the DynamoDB table schema.
 func newExpenseItem(e Expense) expenseItem {
 	sk := sortKey(e.Date, e.ID)
@@ -39,7 +42,7 @@ func newExpenseItem(e Expense) expenseItem {
 	return expenseItem{
 		PK:             expensesPK,
 		SK:             sk,
-		GSI1PK:         fmt.Sprintf("CAT#%s", e.Category),
+		GSI1PK:         categoryKey(e.Category),
 		GSI1SK:         sk,
 		Amount:         e.Amount,
 		Currency:       e.Currency,

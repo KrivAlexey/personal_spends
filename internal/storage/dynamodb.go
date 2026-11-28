@@ -32,6 +32,12 @@ type dynamoDBAPI interface {
 		params *dynamodb.BatchGetItemInput,
 		optFns ...func(*dynamodb.Options),
 	) (*dynamodb.BatchGetItemOutput, error)
+
+	Query(
+		ctx context.Context,
+		params *dynamodb.QueryInput,
+		optFns ...func(*dynamodb.Options),
+	) (*dynamodb.QueryOutput, error)
 }
 
 // ExpenseKey addresses one stored expense: SK = "<date>#<ID>".

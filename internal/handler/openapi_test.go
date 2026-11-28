@@ -77,7 +77,7 @@ func TestOpenAPIEndpoint(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
-			New(&fakeUploader{}, testBanks, nil).Routes().ServeHTTP(rec, httptest.NewRequest(tt.method, "/openapi.yaml", nil))
+			New(&fakeUploader{}, testBanks, &fakeExpenses{}, fakeCategories{}, nil).Routes().ServeHTTP(rec, httptest.NewRequest(tt.method, "/openapi.yaml", nil))
 
 			if rec.Code != tt.wantStatus {
 				t.Fatalf("status = %d, want %d", rec.Code, tt.wantStatus)
@@ -109,7 +109,7 @@ func TestOpenAPICoversRoutes(t *testing.T) {
 	}
 	slices.Sort(documented)
 	var registered []string
-	for pattern := range New(&fakeUploader{}, testBanks, nil).routes() {
+	for pattern := range New(&fakeUploader{}, testBanks, &fakeExpenses{}, fakeCategories{}, nil).routes() {
 		// "{$}" is ServeMux syntax for "this path exactly"; OpenAPI paths are exact anyway.
 		registered = append(registered, strings.TrimSuffix(pattern, "{$}"))
 	}
@@ -185,7 +185,7 @@ func TestOpenAPIUploadResponseSchema(t *testing.T) {
 // lists a media type other than the one the server sends.
 func TestOpenAPIContentTypes(t *testing.T) {
 	doc := parseOpenAPI(t)
-	routes := New(&fakeUploader{list: []uploads.Record{}}, testBanks, nil).Routes()
+	routes := New(&fakeUploader{list: []uploads.Record{}}, testBanks, &fakeExpenses{}, fakeCategories{}, nil).Routes()
 	for path, item := range doc.Paths {
 		op, ok := item["get"]
 		if !ok {
