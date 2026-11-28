@@ -15,12 +15,12 @@ This document describes the v1 target. What is built so far:
 | `internal/categories` | Built: `YamlCategoryProvider`, tested |
 | `internal/categorizer` | Built: `Claude`, tool-output validation tested; live API test skipped without `ANTHROPIC_API_KEY`. `Keyword` (rule-based, no model) for offline local runs, tested |
 | `internal/parser` | Built: `Parser.ParseCSV` (pending filter, transaction IDs) + `FileMappingProvider` (with `Banks()` for the UI), tested |
-| `internal/storage` | Built: `SaveExpenses` (batched, retried), `KnownIDs`, tested. Not yet: `QueryExpenses` |
+| `internal/storage` | Built: `SaveExpenses` (batched, retried), `KnownIDs`, `QueryExpenses` (base table by date, GSI1 by category, amount bounds as a filter expression, never a scan), tested with a fake client |
 | `internal/ingest` | Built: `Importer.Import` (serial loop, skips known rows), tested with fakes |
 | `internal/uploads` | Built: `Service.Upload` (claim by SHA-256, keep the file, import, record the outcome), `Service.List`, `PostgresRecords`, `S3Blobs`, tested with fakes; Postgres and S3 integration tests run against the compose containers only ([0015](decisions/0015-upload-files-and-records.md)) |
-| `internal/handler` | Built: `POST /uploads/csv` ([0012](decisions/0012-raw-csv-upload-body.md), over `uploads.Service`), `GET /uploads`, `GET /banks`, `GET /openapi.yaml` ([0014](decisions/0014-hand-written-openapi-spec.md)), the upload web page at `/` ([0016](decisions/0016-embedded-static-web-ui.md)), request ID + access log + panic recovery middleware, tested with a fake uploader. Not yet: other endpoints, `X-API-Key` middleware |
+| `internal/handler` | Built: `POST /uploads/csv` ([0012](decisions/0012-raw-csv-upload-body.md), over `uploads.Service`), `GET /uploads`, `GET /banks`, `GET /expenses`, `POST /expenses`, `GET /expenses/summary`, `GET /categories`, `GET /openapi.yaml` ([0014](decisions/0014-hand-written-openapi-spec.md)), the upload web page at `/` ([0016](decisions/0016-embedded-static-web-ui.md)), request ID + access log + panic recovery middleware, tested with fakes. Not yet: `X-API-Key` middleware |
 | `internal/logging` | Built: `New` (level/format), context attributes (`request_id`, `batch`, `batches`), tested ([0013](decisions/0013-structured-logging-with-slog.md)) |
-| `cmd/server` | Built: wires the CSV upload path, serves `localhost:8080`, graceful shutdown on SIGINT/SIGTERM, creates the `uploads` table at startup. `CATEGORIZER=fake` + the `compose.yaml` containers run it offline (README). Checked by running it |
+| `cmd/server` | Built: wires the CSV upload path and the expense and category endpoints, serves `localhost:8080`, graceful shutdown on SIGINT/SIGTERM, creates the `uploads` table at startup. `CATEGORIZER=fake` + the `compose.yaml` containers run it offline (README). Checked by running it |
 | `internal/mcp`, `cmd/lambda`, `cmd/mcp` | Not started |
 | Terraform | DynamoDB table with GSI1; uploads S3 bucket (real AWS only, S3Mock locally); workspace `local` creates the table in DynamoDB Local. Not yet: Lambda, API Gateway, and with them the VPC, RDS PostgreSQL and RDS Proxy for `uploads` ([0017](decisions/0017-rds-postgres-for-uploads.md)) |
 | Configuration (below) | Read by `cmd/server`, except `API_KEY` (no auth middleware yet) and `WORKER_POOL_SIZE` (step 2) |
@@ -236,9 +236,9 @@ All endpoints require `X-API-Key` header. Built endpoints are specified in [`ope
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/uploads/csv` | Upload bank export CSV as the raw body (`bank` param, required; `filename` optional); returns `upload_id`, `imported`, `already_known`, `pending_skipped`. Identical bytes again: the first upload's result. `409` while the same bytes are importing, `413` over 10 MiB ([0012](decisions/0012-raw-csv-upload-body.md), [0015](decisions/0015-upload-files-and-records.md)) |
-| `GET` | `/expenses` | Query expenses (`from`, `to`, `category`, `min_amount`, `max_amount`, `limit` params) |
-| `POST` | `/expenses` | Add a single expense manually (JSON body with the expense fields) |
-| `GET` | `/expenses/summary` | Spending totals grouped by category (`from`, `to` params) |
+| `GET` | `/expenses` | Query expenses, newest first (`from`, `to` inclusive dates; `category`; `min_amount`, `max_amount`; `limit`, default 100, at most 500) |
+| `POST` | `/expenses` | Add a single expense manually: JSON `date`, `amount`, `merchant`, `category` (must be configured), optional `raw_description`. The server sets `currency` EUR, `confidence` 1, `source` `manual` and a random `id`; answers `201` with the expense. Stored with `SaveExpenses` |
+| `GET` | `/expenses/summary` | Spending totals grouped by category over every expense in the range (`from`, `to` params), amounts rounded to cents |
 | `GET` | `/categories` | List configured categories |
 | `GET` | `/uploads` | The 100 most recent upload records, newest first: `upload_id`, `filename`, `bank`, `uploaded_at`, `status`, counts (`null` unless done) |
 | `GET` | `/banks` | Configured bank mapping names, sorted, the values `bank` accepts |

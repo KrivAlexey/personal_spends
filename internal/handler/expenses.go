@@ -183,8 +183,13 @@ func (h *Handler) addExpense(w http.ResponseWriter, r *http.Request) {
 	dec.DisallowUnknownFields()
 	var req addExpenseRequest
 	err := dec.Decode(&req)
-	if err == nil && dec.Decode(&struct{}{}) != io.EOF {
-		err = errors.New("trailing data")
+	if err == nil {
+		// Anything after the object, including a body that runs past the cap.
+		if err = dec.Decode(&struct{}{}); err == nil {
+			err = errors.New("trailing data")
+		} else if err == io.EOF {
+			err = nil
+		}
 	}
 	if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 		h.reject(w, r, http.StatusRequestEntityTooLarge, "", "body too large", "body larger than 64 KiB")
