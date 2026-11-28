@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
+	"github.com/KrivAlexey/personal_spends/internal/categories"
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 )
@@ -31,13 +33,13 @@ var _ Categorizer = (*Claude)(nil)
 
 // NewClaude returns a Claude categorizer that logs to logger (nil discards).
 // opts are applied after the API key, e.g. option.WithBaseURL in tests.
-func NewClaude(apiKey string, categories []string, logger *slog.Logger, opts ...option.RequestOption) *Claude {
+func NewClaude(apiKey string, cats []categories.Category, logger *slog.Logger, opts ...option.RequestOption) *Claude {
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
 	return &Claude{
 		client: anthropic.NewClient(append([]option.RequestOption{option.WithAPIKey(apiKey)}, opts...)...),
-		tool:   categorizeBatchTool(categories),
+		tool:   categorizeBatchTool(cats),
 		logger: logger,
 	}
 }
@@ -161,10 +163,21 @@ func unpackCategorizeBatch(message *anthropic.Message, transactions []Transactio
 	return nil, fmt.Errorf("categorizer: no categorize_batch tool call in response")
 }
 
-func categorizeBatchTool(categoryNames []string) anthropic.ToolParam {
+func categorizeBatchTool(cats []categories.Category) anthropic.ToolParam {
+	names := make([]string, len(cats))
+	var desc strings.Builder
+	desc.WriteString("Assign a category and confidence score to each transaction in the batch, in the same order as the input.\n\nCategories:")
+	for i, c := range cats {
+		names[i] = c.Name
+		desc.WriteString("\n- " + c.Name)
+		// Collapse whitespace so a multi-line YAML description can't add fake bullets.
+		if d := strings.Join(strings.Fields(c.Description), " "); d != "" {
+			desc.WriteString(": " + d)
+		}
+	}
 	return anthropic.ToolParam{
 		Name:        "categorize_batch",
-		Description: anthropic.String("Assign a category and confidence score to each transaction in the batch, in the same order as the input."),
+		Description: anthropic.String(desc.String()),
 		InputSchema: anthropic.ToolInputSchemaParam{
 			Properties: map[string]any{
 				"results": map[string]any{
@@ -174,7 +187,7 @@ func categorizeBatchTool(categoryNames []string) anthropic.ToolParam {
 						"type": "object",
 						"properties": map[string]any{
 							"index":      map[string]any{"type": "integer", "description": "Zero-based index of the transaction in the input batch."},
-							"category":   map[string]any{"type": "string", "enum": categoryNames, "description": "Best-matching category name."},
+							"category":   map[string]any{"type": "string", "enum": names, "description": "Best-matching category name."},
 							"confidence": map[string]any{"type": "number", "description": "Confidence from 0.0 to 1.0."},
 						},
 						"required": []string{"index", "category", "confidence"},

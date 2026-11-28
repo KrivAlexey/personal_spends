@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/KrivAlexey/personal_spends/internal/categories"
 	"github.com/KrivAlexey/personal_spends/internal/categorizer"
 	"github.com/KrivAlexey/personal_spends/internal/categorizer/categorizertest"
 	"github.com/KrivAlexey/personal_spends/internal/logging/logtest"
@@ -42,7 +43,7 @@ func fakeAPIWithLogger(t *testing.T, status int, body string, logger *slog.Logge
 		_, _ = w.Write([]byte(body))
 	}))
 	t.Cleanup(srv.Close)
-	return categorizer.NewClaude("test-key", []string{"groceries", "streaming_subscriptions", "fuel"}, logger,
+	return categorizer.NewClaude("test-key", []categories.Category{{Name: "groceries"}, {Name: "streaming_subscriptions"}, {Name: "fuel"}}, logger,
 		option.WithBaseURL(srv.URL), option.WithMaxRetries(0))
 }
 
