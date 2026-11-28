@@ -60,6 +60,10 @@ func TestBankMapping_ApplyDefaults(t *testing.T) {
 			m.IdentityColumns = append(m.IdentityColumns, "Shop")
 			m.OptionalColumns = []string{"Shop"}
 		}, wantErr: true, errHas: []string{"testbank", `"Shop"`}},
+		{name: "optional pending column", mutate: func(m *BankMapping) {
+			m.Mappings["Info"] = "Description"
+			m.OptionalColumns = []string{"Info"}
+		}, wantErr: true, errHas: []string{"testbank", `"Info"`}},
 		{name: "field mapped twice", mutate: func(m *BankMapping) { m.Mappings["Valuta"] = "Date" }, wantErr: true, errHas: []string{`"Date"`, `"Valuta"`, "both map to Date"}},
 	}
 
