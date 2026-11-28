@@ -109,7 +109,7 @@ The system SHALL fail to load the bank mapping file, with an error naming the ba
 - **THEN** loading the mapping file fails with an error naming `sparkasse`
 
 ### Requirement: Exports must contain the mapped columns
-The system SHALL reject an export whose header lacks any column named in the bank's `mappings`, with an error naming the missing column, and SHALL store nothing from it. The exception is a column the mapping lists under `optionalColumns`: if the header lacks it, the field it maps to stays empty and the import proceeds. A `Date` or `Amount` column SHALL NOT be optional: loading a mapping file that lists one, a column absent from `mappings`, a duplicate or empty name, an identity column or the pending column under `optionalColumns` fails with an error naming the bank and the column.
+The system SHALL reject an export whose header lacks any column named in the bank's `mappings`, with an error naming the missing column, and SHALL store nothing from it. The exception is a column the mapping lists under `optionalColumns`: if the header lacks it, the field it maps to stays empty and the import proceeds. A `Date` or `Amount` column SHALL NOT be optional.
 
 #### Scenario: Misspelled column in a mapping
 - **WHEN** a bank mapping contains `Buchungstg: Date` and the export's header has `Buchungstag`
@@ -130,3 +130,10 @@ The system SHALL reject an export whose header lacks any column named in the ban
 #### Scenario: Date or Amount column marked optional
 - **WHEN** a mapping lists the column mapped to `Date` or `Amount` under `optionalColumns`
 - **THEN** loading the mapping file fails with an error naming the bank and the column
+
+### Requirement: Optional columns are validated on load
+Loading a mapping file SHALL fail, with an error naming the bank and the column, when a bank's `optionalColumns` lists a column mapped to `Date` or `Amount`, a column absent from `mappings`, a duplicate or empty name, an identity column, or the pending column.
+
+#### Scenario: Optional column not in mappings
+- **WHEN** a bank's `optionalColumns` lists `Waehrung` but its `mappings` has no `Waehrung`
+- **THEN** loading the mapping file fails with an error naming the bank and `Waehrung`
