@@ -6,9 +6,12 @@ import (
 	"io"
 	"maps"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/KrivAlexey/personal_spends/internal/categorizer"
 )
 
 // Header of a Sparkasse CSV-CAMT export. All values in this file are made up.
@@ -274,6 +277,67 @@ func TestParseCSV_MissingColumns(t *testing.T) {
 			if len(res.Transactions) != 0 {
 				t.Errorf("got %d transactions, want none", len(res.Transactions))
 			}
+		})
+	}
+}
+
+func TestParseCSV_OptionalColumns(t *testing.T) {
+	without := func(cols ...string) []string {
+		var h []string
+		for _, c := range sparkasseHeader {
+			if !slices.Contains(cols, c) {
+				h = append(h, c)
+			}
+		}
+		return h
+	}
+	// An identity column can't be optional, so this bank's identity is only
+	// columns every export has.
+	optional := committedSparkasse(t)
+	optional.IdentityColumns = []string{"Auftragskonto", "Buchungstag", "Betrag"}
+	optional.OptionalColumns = []string{"Waehrung", "Verwendungszweck"}
+
+	tests := []struct {
+		name    string
+		header  []string
+		wantErr string
+		check   func(*testing.T, categorizer.Transaction)
+	}{
+		{name: "optional columns present", header: sparkasseHeader, check: func(t *testing.T, tx categorizer.Transaction) {
+			if tx.Currency != "EUR" || tx.Description == "" {
+				t.Errorf("Currency = %q, Description = %q, want both filled", tx.Currency, tx.Description)
+			}
+		}},
+		{name: "optional Currency missing", header: without("Waehrung"), check: func(t *testing.T, tx categorizer.Transaction) {
+			if tx.Currency != "" || tx.Amount != -8.99 || tx.Description == "" {
+				t.Errorf("got currency %q, amount %v, description %q", tx.Currency, tx.Amount, tx.Description)
+			}
+		}},
+		{name: "both optional columns missing", header: without("Waehrung", "Verwendungszweck"), check: func(t *testing.T, tx categorizer.Transaction) {
+			if tx.Currency != "" || tx.Description != "" || tx.Merchant == "" {
+				t.Errorf("got currency %q, description %q, merchant %q", tx.Currency, tx.Description, tx.Merchant)
+			}
+		}},
+		{name: "non-optional mapped column missing", header: without("Waehrung", "Beguenstigter/Zahlungspflichtiger"), wantErr: "Beguenstigter/Zahlungspflichtiger"},
+		{name: "Amount column missing", header: without("Betrag"), wantErr: "Betrag"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res, err := parse(t, optional, csvOf(tt.header, bookedRow()))
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("error = %v, want one naming %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ParseCSV: %v", err)
+			}
+			if len(res.Transactions) != 1 {
+				t.Fatalf("got %d transactions, want 1", len(res.Transactions))
+			}
+			tt.check(t, res.Transactions[0])
 		})
 	}
 }

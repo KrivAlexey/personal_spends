@@ -43,6 +43,17 @@ func TestBankMapping_ApplyDefaults(t *testing.T) {
 		{name: "no mappings", mutate: func(m *BankMapping) { m.Mappings = nil }, wantErr: true},
 		{name: "no Date mapping", mutate: func(m *BankMapping) { delete(m.Mappings, "Date") }, wantErr: true},
 		{name: "no Amount mapping", mutate: func(m *BankMapping) { delete(m.Mappings, "Amount") }, wantErr: true},
+		{name: "optional column on a non-required field", mutate: func(m *BankMapping) {
+			m.Mappings["Curr"] = "Currency"
+			m.OptionalColumns = []string{"Curr"}
+		}},
+		{name: "optional column not in mappings", mutate: func(m *BankMapping) { m.OptionalColumns = []string{"Nope"} }, wantErr: true, errHas: []string{"testbank", `"Nope"`}},
+		{name: "Date column marked optional", mutate: func(m *BankMapping) { m.OptionalColumns = []string{"Date"} }, wantErr: true, errHas: []string{"testbank", `"Date"`}},
+		{name: "Amount column marked optional", mutate: func(m *BankMapping) { m.OptionalColumns = []string{"Amount"} }, wantErr: true, errHas: []string{"testbank", `"Amount"`}},
+		{name: "identity column marked optional", mutate: func(m *BankMapping) {
+			m.Mappings["Account"] = "Merchant"
+			m.OptionalColumns = []string{"Account"}
+		}, wantErr: true, errHas: []string{"testbank", `"Account"`}},
 		{name: "field mapped twice", mutate: func(m *BankMapping) { m.Mappings["Valuta"] = "Date" }, wantErr: true, errHas: []string{`"Date"`, `"Valuta"`, "both map to Date"}},
 	}
 

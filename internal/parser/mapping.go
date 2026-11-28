@@ -38,6 +38,9 @@ type BankMapping struct {
 	// changes on a booked row belong here.
 	IdentityColumns []string          `yaml:"identityColumns"`
 	Mappings        map[string]string `yaml:"mappings"`
+	// OptionalColumns are mapped columns an export may omit; the field stays
+	// empty. Never Date or Amount, never an identity column.
+	OptionalColumns []string `yaml:"optionalColumns"`
 }
 
 // Comma returns the delimiter as a rune for csv.Reader. Valid only after
