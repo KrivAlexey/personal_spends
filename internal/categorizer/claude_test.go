@@ -212,6 +212,7 @@ type messagesRequest struct {
 	Tools []struct {
 		Name        string `json:"name"`
 		InputSchema struct {
+			Required   []string `json:"required"`
 			Properties struct {
 				Results struct {
 					Items struct {
@@ -359,6 +360,9 @@ func assertCategorizeRequest(t *testing.T, body []byte, categories []string, bat
 	}
 	if req.ToolChoice.Type != "tool" || req.ToolChoice.Name != "categorize_batch" {
 		t.Errorf("expected tool_choice forcing categorize_batch, got %+v", req.ToolChoice)
+	}
+	if want := []string{"results"}; !reflect.DeepEqual(req.Tools[0].InputSchema.Required, want) {
+		t.Errorf("expected required %v, got %v", want, req.Tools[0].InputSchema.Required)
 	}
 	enum := req.Tools[0].InputSchema.Properties.Results.Items.Properties.Category.Enum
 	if !reflect.DeepEqual(enum, categories) {
