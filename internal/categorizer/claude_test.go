@@ -77,9 +77,31 @@ func TestClaudeCategorizer_CallClaude(t *testing.T) {
 	}
 	claude := NewClaude(apiKey, cats, nil)
 
-	results, err := claude.Categorize(t.Context(), testTransactions)
-	_ = results
-	_ = err
+	// 50 is ingest.DefaultBatchSize; ingest imports this package, so it can't be used here.
+	const fullBatch = 50
+	full := make([]Transaction, fullBatch)
+	for i := range full {
+		full[i] = testTransactions[i%len(testTransactions)]
+	}
+
+	tests := []struct {
+		name  string
+		batch []Transaction
+	}{
+		{"few transactions", testTransactions},
+		{"full batch", full},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			results, err := claude.Categorize(t.Context(), tt.batch)
+			if err != nil {
+				t.Fatalf("Categorize: %v", err)
+			}
+			if len(results) != len(tt.batch) {
+				t.Fatalf("expected %d results, got %d", len(tt.batch), len(results))
+			}
+		})
+	}
 }
 
 // toolUseMessage builds a fake API response message carrying a single
