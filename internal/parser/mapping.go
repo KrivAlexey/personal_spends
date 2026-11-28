@@ -38,6 +38,8 @@ type BankMapping struct {
 	// changes on a booked row belong here.
 	IdentityColumns []string          `yaml:"identityColumns"`
 	Mappings        map[string]string `yaml:"mappings"`
+	// OptionalColumns: red-step stub, no behavior yet.
+	OptionalColumns []string `yaml:"optionalColumns"`
 }
 
 // Comma returns the delimiter as a rune for csv.Reader. Valid only after

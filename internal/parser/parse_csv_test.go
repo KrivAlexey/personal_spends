@@ -6,6 +6,7 @@ import (
 	"io"
 	"maps"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -273,6 +274,59 @@ func TestParseCSV_MissingColumns(t *testing.T) {
 			}
 			if len(res.Transactions) != 0 {
 				t.Errorf("got %d transactions, want none", len(res.Transactions))
+			}
+		})
+	}
+}
+
+func TestParseCSV_OptionalColumns(t *testing.T) {
+	// Waehrung is optional here, so it can't also be an identity column.
+	optionalCurrency := func(t *testing.T) BankMapping {
+		m := committedSparkasse(t)
+		m.OptionalColumns = []string{"Waehrung"}
+		m.IdentityColumns = slices.DeleteFunc(slices.Clone(m.IdentityColumns), func(c string) bool { return c == "Waehrung" })
+		return m
+	}
+	without := func(col string) []string {
+		return slices.DeleteFunc(slices.Clone(sparkasseHeader), func(c string) bool { return c == col })
+	}
+
+	tests := []struct {
+		name         string
+		header       []string
+		wantErrHas   string // "" means the import must succeed
+		wantCurrency string
+	}{
+		{name: "optional column present", header: sparkasseHeader, wantCurrency: "EUR"},
+		{name: "optional column absent", header: without("Waehrung"), wantCurrency: ""},
+		{name: "other mapped column absent", header: without("Verwendungszweck"), wantErrHas: "Verwendungszweck"},
+		{name: "optional and an identity column absent", header: without("Waehrung")[1:], wantErrHas: "Auftragskonto"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res, err := parse(t, optionalCurrency(t), csvOf(tt.header, bookedRow()))
+			if tt.wantErrHas != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErrHas) {
+					t.Fatalf("error = %v, want one naming %q", err, tt.wantErrHas)
+				}
+				if len(res.Transactions) != 0 {
+					t.Errorf("got %d transactions, want none", len(res.Transactions))
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ParseCSV error = %v, want success", err)
+			}
+			if len(res.Transactions) != 1 {
+				t.Fatalf("got %d transactions, want 1", len(res.Transactions))
+			}
+			tx := res.Transactions[0]
+			if tx.Currency != tt.wantCurrency {
+				t.Errorf("Currency = %q, want %q", tx.Currency, tt.wantCurrency)
+			}
+			if tx.Amount != -8.99 || tx.Description == "" {
+				t.Errorf("other fields lost: amount %v, description %q", tx.Amount, tx.Description)
 			}
 		})
 	}
