@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -77,9 +78,43 @@ func TestClaudeCategorizer_CallClaude(t *testing.T) {
 	}
 	claude := NewClaude(apiKey, cats, nil)
 
-	results, err := claude.Categorize(t.Context(), testTransactions)
-	_ = results
-	_ = err
+	// 50 is ingest.DefaultBatchSize; ingest imports this package, so it can't be used here.
+	const fullBatch = 50
+	full := make([]Transaction, fullBatch)
+	for i := range full {
+		// Distinct rows, so a mixed-up order shows and the input is realistically long.
+		tx := testTransactions[i%len(testTransactions)]
+		tx.Merchant = fmt.Sprintf("%s %d", tx.Merchant, i)
+		tx.Description = fmt.Sprintf("%s REF %04d CARD PAYMENT", tx.Description, i)
+		full[i] = tx
+	}
+
+	tests := []struct {
+		name  string
+		batch []Transaction
+	}{
+		{"few transactions", testTransactions},
+		{"full batch", full},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			results, err := claude.Categorize(t.Context(), tt.batch)
+			if err != nil {
+				t.Fatalf("Categorize: %v", err)
+			}
+			if len(results) != len(tt.batch) {
+				t.Fatalf("expected %d results, got %d", len(tt.batch), len(results))
+			}
+			for i, r := range results {
+				if r.Transaction != tt.batch[i] {
+					t.Errorf("result %d: expected transaction %+v, got %+v", i, tt.batch[i], r.Transaction)
+				}
+				if !slices.ContainsFunc(cats, func(c categories.Category) bool { return c.Name == r.Category }) {
+					t.Errorf("result %d: unknown category %q", i, r.Category)
+				}
+			}
+		})
+	}
 }
 
 // toolUseMessage builds a fake API response message carrying a single
