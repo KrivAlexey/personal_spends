@@ -91,7 +91,7 @@ When a handler panics with anything but `http.ErrAbortHandler` (a deliberate abo
 - **THEN** no ERROR record is written and no `500` is sent, the access record has `status=0` (nothing was sent), and the connection is closed. The connection-close part holds under `net/http`; behind the Lambda adapter it is decided when `cmd/lambda` lands
 
 ### Requirement: Rejected requests are logged with the reason
-When a request is rejected with `400`, the system SHALL write one WARN record with `method`, `route`, `bank` (when present) and `reason`. The `reason` SHALL be fixed text that contains no caller input. In every record, a `bank` value longer than 64 runes (Unicode characters, not bytes) SHALL be cut to its first 64 runes followed by `…`.
+When a request is rejected with `400`, `409` or `413`, the system SHALL write one WARN record with `method`, `route`, `bank` (when present) and `reason`. The `reason` SHALL be fixed text that contains no caller input. In every record, a `bank` value longer than 64 runes (Unicode characters, not bytes) SHALL be cut to its first 64 runes followed by `…`.
 
 #### Scenario: Unknown bank
 - **WHEN** an export is posted to `/uploads/csv?bank=nobank`
@@ -108,6 +108,14 @@ When a request is rejected with `400`, the system SHALL write one WARN record wi
 #### Scenario: Oversized multi-byte bank parameter
 - **WHEN** an export is posted with a `bank` parameter of `ä` repeated 100 times
 - **THEN** the WARN record's `bank` is `ä` repeated 64 times followed by `…`, and contains no U+FFFD replacement character
+
+#### Scenario: Body too large
+- **WHEN** a body over 10 MiB is posted to `/uploads/csv?bank=sparkasse`
+- **THEN** the response is `413` and one WARN record is written with `bank=sparkasse` and `reason` `body too large`, and no ERROR record is written
+
+#### Scenario: Upload in progress
+- **WHEN** an export is posted while the same file is already being imported
+- **THEN** the response is `409` and one WARN record is written with `reason` `upload in progress`, and no ERROR record is written
 
 #### Scenario: Missing bank parameter
 - **WHEN** an export is posted to `/uploads/csv` with no `bank` parameter
