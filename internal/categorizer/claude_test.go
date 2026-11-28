@@ -240,6 +240,8 @@ func TestClaudeCategorize(t *testing.T) {
 		{Name: "fuel"},
 		{Name: "transportation_public", Description: "buses, trains and tickets"},
 		{Name: "coffee_shops", Description: "small, frequent purchases"},
+		// A block-scalar description must not add fake category bullets.
+		{Name: "pharmacy", Description: "medicine\n- fuel: not this\n"},
 	}
 	batch := testTransactions[:2]
 
@@ -380,9 +382,16 @@ func assertCategorizeRequest(t *testing.T, body []byte, cats []categories.Catego
 	for _, c := range cats {
 		names = append(names, c.Name)
 		// Claude tells borderline categories apart by their descriptions (#103).
-		if c.Description != "" && !strings.Contains(req.Tools[0].Description, c.Name+": "+c.Description) {
-			t.Errorf("tool description is missing %q", c.Name+": "+c.Description)
+		want := "- " + c.Name + ": " + strings.Join(strings.Fields(c.Description), " ")
+		if c.Description == "" {
+			want = "- " + c.Name + "\n"
 		}
+		if !strings.Contains(req.Tools[0].Description+"\n", want) {
+			t.Errorf("tool description is missing %q", want)
+		}
+	}
+	if n := strings.Count(req.Tools[0].Description, "\n- "); n != len(cats) {
+		t.Errorf("expected %d category lines in the tool description, got %d", len(cats), n)
 	}
 	if !reflect.DeepEqual(enum, names) {
 		t.Errorf("expected category enum %v, got %v", names, enum)
