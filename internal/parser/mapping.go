@@ -112,6 +112,8 @@ func (mapping *BankMapping) applyDefaults() error {
 			return fmt.Errorf("bank %s: column %q maps to %s, which can't be optional", mapping.BankName, col, field)
 		case seenOptional[col]:
 			return fmt.Errorf("bank %s: optionalColumns lists %q twice", mapping.BankName, col)
+		case col == mapping.PendingColumn:
+			return fmt.Errorf("bank %s: optional column %q is also the pending column", mapping.BankName, col)
 		case seen[col]:
 			return fmt.Errorf("bank %s: optional column %q is also an identity column", mapping.BankName, col)
 		}
