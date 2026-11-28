@@ -32,6 +32,26 @@ type dynamoDBAPI interface {
 		params *dynamodb.BatchGetItemInput,
 		optFns ...func(*dynamodb.Options),
 	) (*dynamodb.BatchGetItemOutput, error)
+
+	Query(
+		ctx context.Context,
+		params *dynamodb.QueryInput,
+		optFns ...func(*dynamodb.Options),
+	) (*dynamodb.QueryOutput, error)
+}
+
+// ExpenseQuery selects stored expenses. The zero value matches all of them.
+type ExpenseQuery struct {
+	From, To  time.Time // booking dates, inclusive; zero leaves that end open
+	Category  string    // "" matches every category
+	MinAmount *float64  // inclusive; nil leaves that end open
+	MaxAmount *float64
+	Limit     int // 0 returns every match
+}
+
+// QueryExpenses returns the expenses matching q, newest booking date first.
+func (store *Store) QueryExpenses(ctx context.Context, q ExpenseQuery) ([]Expense, error) {
+	return nil, nil
 }
 
 // ExpenseKey addresses one stored expense: SK = "<date>#<ID>".

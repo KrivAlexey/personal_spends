@@ -12,7 +12,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/KrivAlexey/personal_spends/internal/categories"
 	"github.com/KrivAlexey/personal_spends/internal/parser"
+	"github.com/KrivAlexey/personal_spends/internal/storage"
 	"github.com/KrivAlexey/personal_spends/internal/uploads"
 )
 
@@ -33,20 +35,72 @@ type bankLister interface {
 	Banks() []string
 }
 
+type expenseStore interface {
+	QueryExpenses(ctx context.Context, q storage.ExpenseQuery) ([]storage.Expense, error)
+	SaveExpenses(ctx context.Context, expenses []storage.Expense) error
+}
+
 // Handler serves the REST API.
 type Handler struct {
 	up     uploadService
 	banks  bankLister
+	store  expenseStore
+	cats   categories.CategoryProvider
 	logger *slog.Logger
 }
 
 // New returns a Handler that runs and lists uploads with up, lists bank
-// names from banks and logs to logger; a nil logger discards.
-func New(up uploadService, banks bankLister, logger *slog.Logger) *Handler {
+// names from banks, reads and adds expenses with store, lists categories
+// from cats and logs to logger; a nil logger discards.
+func New(up uploadService, banks bankLister, store expenseStore, cats categories.CategoryProvider, logger *slog.Logger) *Handler {
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
-	return &Handler{up: up, banks: banks, logger: logger}
+	return &Handler{up: up, banks: banks, store: store, cats: cats, logger: logger}
+}
+
+// expenseEntry is one expense in a response.
+type expenseEntry struct {
+	ID             string    `json:"id"`
+	Date           string    `json:"date"`
+	Amount         float64   `json:"amount"`
+	Currency       string    `json:"currency"`
+	Merchant       string    `json:"merchant"`
+	RawDescription string    `json:"raw_description"`
+	Category       string    `json:"category"`
+	Confidence     float64   `json:"confidence"`
+	Source         string    `json:"source"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+// expensesResponse is the JSON body of GET /expenses.
+type expensesResponse struct {
+	Expenses []expenseEntry `json:"expenses"`
+}
+
+// summaryEntry is one category's line in GET /expenses/summary.
+type summaryEntry struct {
+	Category string  `json:"category"`
+	Total    float64 `json:"total"`
+	Count    int     `json:"count"`
+}
+
+// summaryResponse is the JSON body of GET /expenses/summary.
+type summaryResponse struct {
+	Categories []summaryEntry `json:"categories"`
+	Total      float64        `json:"total"`
+	Count      int            `json:"count"`
+}
+
+// categoryEntry is one category in GET /categories.
+type categoryEntry struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// categoriesResponse is the JSON body of GET /categories.
+type categoriesResponse struct {
+	Categories []categoryEntry `json:"categories"`
 }
 
 // uploadEntry is one element of the GET /uploads list; counts are null
@@ -90,10 +144,14 @@ func (h *Handler) Routes() http.Handler {
 // exactly these.
 func (h *Handler) routes() map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
-		"POST /uploads/csv": h.uploadCSV,
-		"GET /uploads":      h.listUploads,
-		"GET /banks":        h.listBanks,
-		"GET /openapi.yaml": h.openAPI,
+		"POST /uploads/csv":     h.uploadCSV,
+		"GET /uploads":          h.listUploads,
+		"GET /banks":            h.listBanks,
+		"GET /openapi.yaml":     h.openAPI,
+		"GET /expenses":         h.listExpenses,
+		"POST /expenses":        h.addExpense,
+		"GET /expenses/summary": h.summary,
+		"GET /categories":       h.listCategories,
 		// {$}: only the root itself is the page, other paths stay 404.
 		"GET /{$}":     h.webFile("web/index.html", "text/html; charset=utf-8"),
 		"GET /app.js":  h.webFile("web/app.js", "text/javascript; charset=utf-8"),

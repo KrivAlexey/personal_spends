@@ -17,7 +17,7 @@ import (
 // returned buffer.
 func loggedHandler(up uploadService, level slog.Level) (*Handler, *logtest.Buffer) {
 	logger, buf := logtest.NewLogger(level)
-	return New(up, testBanks, logger), buf
+	return New(up, testBanks, &fakeExpenses{}, fakeCategories{}, logger), buf
 }
 
 // accessRecord returns the only INFO access record, failing otherwise.

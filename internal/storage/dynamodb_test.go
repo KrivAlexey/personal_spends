@@ -25,6 +25,28 @@ type fakeDynamoClient struct {
 	unprocessedGetLeft int // number of BatchGetItem calls that return every key as unprocessed
 	batchGetErr        error
 	lastProjection     *string
+
+	queryPages  [][]map[string]types.AttributeValue // one page of items per Query call
+	queryErr    error
+	queryInputs []*dynamodb.QueryInput
+}
+
+func (f *fakeDynamoClient) Query(ctx context.Context, params *dynamodb.QueryInput, optFns ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error) {
+	f.queryInputs = append(f.queryInputs, params)
+	if f.queryErr != nil {
+		return nil, f.queryErr
+	}
+	n := len(f.queryInputs) - 1
+	if n >= len(f.queryPages) {
+		return &dynamodb.QueryOutput{}, nil
+	}
+	out := &dynamodb.QueryOutput{Items: f.queryPages[n]}
+	if n+1 < len(f.queryPages) { // more pages follow
+		out.LastEvaluatedKey = map[string]types.AttributeValue{
+			"SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("page-%d", n)},
+		}
+	}
+	return out, nil
 }
 
 func (f *fakeDynamoClient) BatchGetItem(ctx context.Context, params *dynamodb.BatchGetItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.BatchGetItemOutput, error) {

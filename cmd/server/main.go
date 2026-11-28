@@ -101,10 +101,15 @@ func run(ctx context.Context) error {
 
 	up := uploads.New(records, blobs, imp, logger)
 
+	categoryProvider, err := categories.NewYamlCategoryProvider(categoriesFile)
+	if err != nil {
+		return err
+	}
+
 	// No WriteTimeout: an upload waits on Claude for every batch.
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           handler.New(up, mappings, logger).Routes(),
+		Handler:           handler.New(up, mappings, store, categoryProvider, logger).Routes(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
