@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/KrivAlexey/personal_spends/internal/categories"
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 )
@@ -67,11 +68,14 @@ func TestClaudeCategorizer_CallClaude(t *testing.T) {
 		t.Skip("ANTHROPIC_API_KEY not set")
 	}
 
-	categories := []string{
+	var cats []categories.Category
+	for _, name := range []string{
 		"groceries", "restaurants", "coffee_shops", "transportation_public", "fuel",
 		"housing_rent", "utilities", "internet_phone", "streaming_subscriptions", "shopping_clothing",
+	} {
+		cats = append(cats, categories.Category{Name: name})
 	}
-	claude := NewClaude(apiKey, categories, nil)
+	claude := NewClaude(apiKey, cats, nil)
 
 	results, err := claude.Categorize(t.Context(), testTransactions)
 	_ = results
@@ -190,7 +194,7 @@ func TestUnpackCategorizeBatch(t *testing.T) {
 // TestClaudeImplementsCategorizer guards the wiring the handler depends on:
 // NewClaude's return value has to be assignable to a Categorizer field.
 func TestClaudeImplementsCategorizer(t *testing.T) {
-	var c Categorizer = NewClaude("test-key", []string{"groceries"}, nil)
+	var c Categorizer = NewClaude("test-key", []categories.Category{{Name: "groceries"}}, nil)
 	if c == nil {
 		t.Fatal("NewClaude returned a nil Categorizer")
 	}
@@ -211,6 +215,7 @@ type messagesRequest struct {
 	} `json:"messages"`
 	Tools []struct {
 		Name        string `json:"name"`
+		Description string `json:"description"`
 		InputSchema struct {
 			Required   []string `json:"required"`
 			Properties struct {
@@ -229,7 +234,13 @@ type messagesRequest struct {
 }
 
 func TestClaudeCategorize(t *testing.T) {
-	categories := []string{"groceries", "streaming_subscriptions", "fuel", "transportation_public", "coffee_shops"}
+	cats := []categories.Category{
+		{Name: "groceries", Description: "supermarket and food shopping"},
+		{Name: "streaming_subscriptions", Description: "video and music subscriptions"},
+		{Name: "fuel"},
+		{Name: "transportation_public", Description: "buses, trains and tickets"},
+		{Name: "coffee_shops", Description: "small, frequent purchases"},
+	}
 	batch := testTransactions[:2]
 
 	tests := []struct {
@@ -284,7 +295,7 @@ func TestClaudeCategorize(t *testing.T) {
 				if err != nil {
 					t.Errorf("read request body: %v", err)
 				}
-				assertCategorizeRequest(t, body, categories, batch)
+				assertCategorizeRequest(t, body, cats, batch)
 
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(tt.status)
@@ -292,7 +303,7 @@ func TestClaudeCategorize(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			claude := NewClaude("test-key", categories, nil, option.WithBaseURL(srv.URL), option.WithMaxRetries(0))
+			claude := NewClaude("test-key", cats, nil, option.WithBaseURL(srv.URL), option.WithMaxRetries(0))
 
 			ctx := t.Context()
 			if tt.cancelCtx {
@@ -341,7 +352,7 @@ func TestClaudeCategorize(t *testing.T) {
 // tool restricted to the configured categories, and every transaction in the
 // prompt. It runs on the server's goroutine, so it reports with Errorf, never
 // Fatalf.
-func assertCategorizeRequest(t *testing.T, body []byte, categories []string, batch []Transaction) {
+func assertCategorizeRequest(t *testing.T, body []byte, cats []categories.Category, batch []Transaction) {
 	t.Helper()
 
 	var req messagesRequest
@@ -365,8 +376,16 @@ func assertCategorizeRequest(t *testing.T, body []byte, categories []string, bat
 		t.Errorf("expected required %v, got %v", want, req.Tools[0].InputSchema.Required)
 	}
 	enum := req.Tools[0].InputSchema.Properties.Results.Items.Properties.Category.Enum
-	if !reflect.DeepEqual(enum, categories) {
-		t.Errorf("expected category enum %v, got %v", categories, enum)
+	var names []string
+	for _, c := range cats {
+		names = append(names, c.Name)
+		// Claude tells borderline categories apart by their descriptions (#103).
+		if c.Description != "" && !strings.Contains(req.Tools[0].Description, c.Name+": "+c.Description) {
+			t.Errorf("tool description is missing %q", c.Name+": "+c.Description)
+		}
+	}
+	if !reflect.DeepEqual(enum, names) {
+		t.Errorf("expected category enum %v, got %v", names, enum)
 	}
 
 	if len(req.Messages) != 1 || len(req.Messages[0].Content) != 1 {

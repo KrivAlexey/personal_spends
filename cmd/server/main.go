@@ -162,11 +162,7 @@ func newCategorizer(ctx context.Context, logger *slog.Logger) (categorizer.Categ
 	if err != nil {
 		return nil, err
 	}
-	names := make([]string, len(cats))
-	for i, c := range cats {
-		names[i] = c.Name
-	}
-	return categorizer.NewClaude(apiKey, names, logger), nil
+	return categorizer.NewClaude(apiKey, cats, logger), nil
 }
 
 func envOr(key, fallback string) string {

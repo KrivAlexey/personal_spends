@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/KrivAlexey/personal_spends/internal/categories"
 	"github.com/KrivAlexey/personal_spends/internal/categorizer"
 	"github.com/KrivAlexey/personal_spends/internal/ingest"
 	"github.com/KrivAlexey/personal_spends/internal/logging"
@@ -604,7 +605,7 @@ func realStack(t *testing.T, apiKey string, api http.HandlerFunc) (http.Handler,
 	srv := httptest.NewServer(api)
 	t.Cleanup(srv.Close)
 	logger, buf := logtest.NewLogger(slog.LevelDebug)
-	claude := categorizer.NewClaude(apiKey, []string{"groceries"}, logger, option.WithBaseURL(srv.URL), option.WithMaxRetries(0))
+	claude := categorizer.NewClaude(apiKey, []categories.Category{{Name: "groceries"}}, logger, option.WithBaseURL(srv.URL), option.WithMaxRetries(0))
 	imp := ingest.NewImporter(parser.NewParser(staticMappings{"testbank": testMapping}), claude, memStore{}, 0, logger)
 	return New(uploads.New(memRecords{}, memBlobs{}, imp, logger), testBanks, logger).Routes(), buf
 }

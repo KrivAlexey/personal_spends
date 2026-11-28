@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/KrivAlexey/personal_spends/internal/categories"
 	"log/slog"
 	"time"
 
@@ -31,13 +32,17 @@ var _ Categorizer = (*Claude)(nil)
 
 // NewClaude returns a Claude categorizer that logs to logger (nil discards).
 // opts are applied after the API key, e.g. option.WithBaseURL in tests.
-func NewClaude(apiKey string, categories []string, logger *slog.Logger, opts ...option.RequestOption) *Claude {
+func NewClaude(apiKey string, cats []categories.Category, logger *slog.Logger, opts ...option.RequestOption) *Claude {
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
+	names := make([]string, len(cats))
+	for i, c := range cats {
+		names[i] = c.Name
+	}
 	return &Claude{
 		client: anthropic.NewClient(append([]option.RequestOption{option.WithAPIKey(apiKey)}, opts...)...),
-		tool:   categorizeBatchTool(categories),
+		tool:   categorizeBatchTool(names),
 		logger: logger,
 	}
 }
