@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/KrivAlexey/personal_spends/internal/categories"
 	"log/slog"
 	"strings"
 	"time"
 
+	"github.com/KrivAlexey/personal_spends/internal/categories"
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 )
@@ -170,8 +170,9 @@ func categorizeBatchTool(cats []categories.Category) anthropic.ToolParam {
 	for i, c := range cats {
 		names[i] = c.Name
 		desc.WriteString("\n- " + c.Name)
-		if c.Description != "" {
-			desc.WriteString(": " + c.Description)
+		// Collapse whitespace so a multi-line YAML description can't add fake bullets.
+		if d := strings.Join(strings.Fields(c.Description), " "); d != "" {
+			desc.WriteString(": " + d)
 		}
 	}
 	return anthropic.ToolParam{
