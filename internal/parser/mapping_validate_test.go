@@ -43,6 +43,27 @@ func TestBankMapping_ApplyDefaults(t *testing.T) {
 		{name: "no mappings", mutate: func(m *BankMapping) { m.Mappings = nil }, wantErr: true},
 		{name: "no Date mapping", mutate: func(m *BankMapping) { delete(m.Mappings, "Date") }, wantErr: true},
 		{name: "no Amount mapping", mutate: func(m *BankMapping) { delete(m.Mappings, "Amount") }, wantErr: true},
+		{name: "optional Merchant column", mutate: func(m *BankMapping) {
+			m.Mappings["Shop"] = "Merchant"
+			m.OptionalColumns = []string{"Shop"}
+		}},
+		{name: "optional Date column", mutate: func(m *BankMapping) { m.OptionalColumns = []string{"Date"} }, wantErr: true, errHas: []string{"testbank", `"Date"`}},
+		{name: "optional Amount column", mutate: func(m *BankMapping) { m.OptionalColumns = []string{"Amount"} }, wantErr: true, errHas: []string{"testbank", `"Amount"`}},
+		{name: "optional column not in mappings", mutate: func(m *BankMapping) { m.OptionalColumns = []string{"Waehrung"} }, wantErr: true, errHas: []string{"testbank", `"Waehrung"`}},
+		{name: "duplicate optional column", mutate: func(m *BankMapping) {
+			m.Mappings["Shop"] = "Merchant"
+			m.OptionalColumns = []string{"Shop", "Shop"}
+		}, wantErr: true, errHas: []string{"testbank", `"Shop"`}},
+		{name: "empty optional column name", mutate: func(m *BankMapping) { m.OptionalColumns = []string{""} }, wantErr: true, errHas: []string{"testbank"}},
+		{name: "optional identity column", mutate: func(m *BankMapping) {
+			m.Mappings["Shop"] = "Merchant"
+			m.IdentityColumns = append(m.IdentityColumns, "Shop")
+			m.OptionalColumns = []string{"Shop"}
+		}, wantErr: true, errHas: []string{"testbank", `"Shop"`}},
+		{name: "optional pending column", mutate: func(m *BankMapping) {
+			m.Mappings["Info"] = "Description"
+			m.OptionalColumns = []string{"Info"}
+		}, wantErr: true, errHas: []string{"testbank", `"Info"`}},
 		{name: "field mapped twice", mutate: func(m *BankMapping) { m.Mappings["Valuta"] = "Date" }, wantErr: true, errHas: []string{`"Date"`, `"Valuta"`, "both map to Date"}},
 	}
 

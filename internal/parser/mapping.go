@@ -38,6 +38,10 @@ type BankMapping struct {
 	// changes on a booked row belong here.
 	IdentityColumns []string          `yaml:"identityColumns"`
 	Mappings        map[string]string `yaml:"mappings"`
+	// OptionalColumns are mapped columns an export may omit; their field then
+	// stays empty. Every other mapped column must be in the header, so a
+	// misspelled key fails loudly. Never Date or Amount, never an identity column.
+	OptionalColumns []string `yaml:"optionalColumns"`
 }
 
 // Comma returns the delimiter as a rune for csv.Reader. Valid only after
@@ -97,6 +101,23 @@ func (mapping *BankMapping) applyDefaults() error {
 		if _, ok := colByField[field]; !ok {
 			return fmt.Errorf("bank %s: no column maps to %s", mapping.BankName, field)
 		}
+	}
+	seenOptional := make(map[string]bool, len(mapping.OptionalColumns))
+	for _, col := range mapping.OptionalColumns {
+		field, mapped := mapping.Mappings[col]
+		switch {
+		case !mapped:
+			return fmt.Errorf("bank %s: optionalColumns lists %q, which is not in mappings", mapping.BankName, col)
+		case field == "Date" || field == "Amount":
+			return fmt.Errorf("bank %s: column %q maps to %s, which can't be optional", mapping.BankName, col, field)
+		case seenOptional[col]:
+			return fmt.Errorf("bank %s: optionalColumns lists %q twice", mapping.BankName, col)
+		case col == mapping.PendingColumn:
+			return fmt.Errorf("bank %s: optional column %q is also the pending column", mapping.BankName, col)
+		case seen[col]:
+			return fmt.Errorf("bank %s: optional column %q is also an identity column", mapping.BankName, col)
+		}
+		seenOptional[col] = true
 	}
 	return nil
 }

@@ -93,7 +93,7 @@ func newLayout(mapping BankMapping, header []string) (layout, error) {
 	}
 
 	for _, col := range slices.Sorted(maps.Keys(mapping.Mappings)) {
-		if _, ok := colIndex[col]; !ok {
+		if _, ok := colIndex[col]; !ok && !slices.Contains(mapping.OptionalColumns, col) {
 			return layout{}, fmt.Errorf("parser: bank %s: header has no mapped column %q", mapping.BankName, col)
 		}
 	}
