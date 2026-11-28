@@ -22,9 +22,9 @@ type ClaudeTransaction struct {
 }
 
 type Claude struct {
-	client     anthropic.Client
-	categories []string
-	logger     *slog.Logger
+	client anthropic.Client
+	tool   anthropic.ToolParam
+	logger *slog.Logger
 }
 
 var _ Categorizer = (*Claude)(nil)
@@ -36,9 +36,9 @@ func NewClaude(apiKey string, categories []string, logger *slog.Logger, opts ...
 		logger = slog.New(slog.DiscardHandler)
 	}
 	return &Claude{
-		client:     anthropic.NewClient(append([]option.RequestOption{option.WithAPIKey(apiKey)}, opts...)...),
-		categories: categories,
-		logger:     logger,
+		client: anthropic.NewClient(append([]option.RequestOption{option.WithAPIKey(apiKey)}, opts...)...),
+		tool:   categorizeBatchTool(categories),
+		logger: logger,
 	}
 }
 
@@ -79,13 +79,7 @@ func (claude *Claude) Categorize(
 		)),
 	}
 
-	toolParam, err := categorizeBatchTool(claude.categories)
-	if err != nil {
-		return nil, err
-	}
-
-	tools := make([]anthropic.ToolUnionParam, 1)
-	tools[0] = anthropic.ToolUnionParam{OfTool: &toolParam}
+	tools := []anthropic.ToolUnionParam{{OfTool: &claude.tool}}
 
 	start := time.Now()
 	message, err := claude.client.Messages.New(ctx, anthropic.MessageNewParams{
@@ -167,41 +161,27 @@ func unpackCategorizeBatch(message *anthropic.Message, transactions []Transactio
 	return nil, fmt.Errorf("categorizer: no categorize_batch tool call in response")
 }
 
-func categorizeBatchTool(categoryNames []string) (anthropic.ToolParam, error) {
-	namesJSON, err := json.Marshal(categoryNames)
-	if err != nil {
-		return anthropic.ToolParam{}, fmt.Errorf("categorizer: marshal category names: %w", err)
-	}
-
-	schemaJSON := `{
-		"properties": {
-			"results": {
-				"type": "array",
-				"description": "One result per transaction, same order and length as the input batch.",
-				"items": {
-					"type": "object",
-					"properties": {
-						"index": {"type": "integer", "description": "Zero-based index of the transaction in the input batch."},
-						"category": {"type": "string", "enum": ` + string(namesJSON) + `, "description": "Best-matching category name."},
-						"confidence": {"type": "number", "description": "Confidence from 0.0 to 1.0."}
-					},
-					"required": ["index", "category", "confidence"]
-				}
-			}
-		},
-		"required": ["results"]
-	}`
-
-	var schema struct {
-		Properties map[string]any `json:"properties"`
-	}
-	if err := json.Unmarshal([]byte(schemaJSON), &schema); err != nil {
-		return anthropic.ToolParam{}, fmt.Errorf("categorizer: parse tool schema: %w", err)
-	}
-
+func categorizeBatchTool(categoryNames []string) anthropic.ToolParam {
 	return anthropic.ToolParam{
 		Name:        "categorize_batch",
 		Description: anthropic.String("Assign a category and confidence score to each transaction in the batch, in the same order as the input."),
-		InputSchema: anthropic.ToolInputSchemaParam{Properties: schema.Properties},
-	}, nil
+		InputSchema: anthropic.ToolInputSchemaParam{
+			Properties: map[string]any{
+				"results": map[string]any{
+					"type":        "array",
+					"description": "One result per transaction, same order and length as the input batch.",
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"index":      map[string]any{"type": "integer", "description": "Zero-based index of the transaction in the input batch."},
+							"category":   map[string]any{"type": "string", "enum": categoryNames, "description": "Best-matching category name."},
+							"confidence": map[string]any{"type": "number", "description": "Confidence from 0.0 to 1.0."},
+						},
+						"required": []string{"index", "category", "confidence"},
+					},
+				},
+			},
+			Required: []string{"results"},
+		},
+	}
 }
