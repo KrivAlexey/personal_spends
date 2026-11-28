@@ -268,6 +268,8 @@ func TestAddExpense_Rejected(t *testing.T) {
 		{name: "empty merchant", body: `{"date":"2026-04-02","amount":-1,"merchant":"","category":"groceries"}`, wantStatus: 400},
 		{name: "unknown category", body: `{"date":"2026-04-02","amount":-1,"merchant":"B","category":"nonsense"}`, wantStatus: 400},
 		{name: "body over 64 KiB", body: `{"merchant":"` + strings.Repeat("a", 64<<10) + `"}`, wantStatus: 413},
+		{name: "valid object then padding over 64 KiB", body: validExpenseBody + strings.Repeat(" ", 64<<10), wantStatus: 413},
+		{name: "valid object then trailing data", body: validExpenseBody + ` {}`, wantStatus: 400},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
