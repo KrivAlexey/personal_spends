@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -81,7 +82,11 @@ func TestClaudeCategorizer_CallClaude(t *testing.T) {
 	const fullBatch = 50
 	full := make([]Transaction, fullBatch)
 	for i := range full {
-		full[i] = testTransactions[i%len(testTransactions)]
+		// Distinct rows, so a mixed-up order shows and the input is realistically long.
+		tx := testTransactions[i%len(testTransactions)]
+		tx.Merchant = fmt.Sprintf("%s %d", tx.Merchant, i)
+		tx.Description = fmt.Sprintf("%s REF %04d CARD PAYMENT", tx.Description, i)
+		full[i] = tx
 	}
 
 	tests := []struct {
@@ -99,6 +104,14 @@ func TestClaudeCategorizer_CallClaude(t *testing.T) {
 			}
 			if len(results) != len(tt.batch) {
 				t.Fatalf("expected %d results, got %d", len(tt.batch), len(results))
+			}
+			for i, r := range results {
+				if r.Transaction != tt.batch[i] {
+					t.Errorf("result %d: expected transaction %+v, got %+v", i, tt.batch[i], r.Transaction)
+				}
+				if !slices.ContainsFunc(cats, func(c categories.Category) bool { return c.Name == r.Category }) {
+					t.Errorf("result %d: unknown category %q", i, r.Category)
+				}
 			}
 		})
 	}
