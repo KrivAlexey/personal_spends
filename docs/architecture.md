@@ -116,6 +116,9 @@ Bank mappings are written by hand and committed to the repo
 (`internal/parser/bank_mappings.yaml`) — one entry per bank, added as a new
 bank's export is encountered. An unknown `bankName` is an error, not a guess
 ([0008](decisions/0008-manual-bank-mappings.md)).
+Every mapped column must be in an export's header, except those a mapping lists
+under `optionalColumns` (never `Date`, `Amount` or an identity column): a missing
+one leaves its field empty.
 Generating a mapping at runtime (Claude reads the first N rows and returns the
 column layout, result persisted as a new mapping) comes later; the
 `BankMappingProvider` interface is the seam for it.

@@ -101,6 +101,18 @@ func (mapping *BankMapping) applyDefaults() error {
 			return fmt.Errorf("bank %s: no column maps to %s", mapping.BankName, field)
 		}
 	}
+	for _, col := range mapping.OptionalColumns {
+		field, ok := mapping.Mappings[col]
+		if !ok {
+			return fmt.Errorf("bank %s: optionalColumns lists %q, which is not in mappings", mapping.BankName, col)
+		}
+		if field == "Date" || field == "Amount" {
+			return fmt.Errorf("bank %s: optionalColumns lists %q, which maps to required field %s", mapping.BankName, col, field)
+		}
+		if slices.Contains(mapping.IdentityColumns, col) {
+			return fmt.Errorf("bank %s: optionalColumns lists %q, which is also an identity column", mapping.BankName, col)
+		}
+	}
 	return nil
 }
 
