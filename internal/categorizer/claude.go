@@ -89,10 +89,12 @@ func (claude *Claude) Categorize(
 
 	start := time.Now()
 	message, err := claude.client.Messages.New(ctx, anthropic.MessageNewParams{
-		Model:     anthropic.ModelClaudeHaiku4_5_20251001,
-		MaxTokens: 1024,
-		Messages:  mesagePrams,
-		Tools:     tools,
+		Model: anthropic.ModelClaudeHaiku4_5_20251001,
+		// A full 50-transaction batch needs ~1,500 output tokens (#65).
+		MaxTokens:  4096,
+		Messages:   mesagePrams,
+		Tools:      tools,
+		ToolChoice: anthropic.ToolChoiceParamOfTool("categorize_batch"),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("categorizer: create message: %w", safeAPIError(err))
