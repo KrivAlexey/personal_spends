@@ -199,6 +199,11 @@ func TestClaudeImplementsCategorizer(t *testing.T) {
 // messagesRequest is the part of a POST /v1/messages body Categorize is
 // responsible for.
 type messagesRequest struct {
+	MaxTokens  int `json:"max_tokens"`
+	ToolChoice struct {
+		Type string `json:"type"`
+		Name string `json:"name"`
+	} `json:"tool_choice"`
 	Messages []struct {
 		Content []struct {
 			Text string `json:"text"`
@@ -347,6 +352,13 @@ func assertCategorizeRequest(t *testing.T, body []byte, categories []string, bat
 	if len(req.Tools) != 1 || req.Tools[0].Name != "categorize_batch" {
 		t.Errorf("expected one categorize_batch tool, got %+v", req.Tools)
 		return
+	}
+	// 50 result entries need ~1,500 output tokens; 1024 truncated them (#65).
+	if req.MaxTokens < 4096 {
+		t.Errorf("expected max_tokens >= 4096, got %d", req.MaxTokens)
+	}
+	if req.ToolChoice.Type != "tool" || req.ToolChoice.Name != "categorize_batch" {
+		t.Errorf("expected tool_choice forcing categorize_batch, got %+v", req.ToolChoice)
 	}
 	enum := req.Tools[0].InputSchema.Properties.Results.Items.Properties.Category.Enum
 	if !reflect.DeepEqual(enum, categories) {
