@@ -15,8 +15,6 @@ import (
 )
 
 type fakeDynamoClient struct {
-	putItemErr error
-
 	batchWriteCalls int
 	unprocessedLeft int // number of BatchWriteItem calls that should still report unprocessed items
 	batchWriteErr   error
@@ -56,13 +54,6 @@ func (f *fakeDynamoClient) BatchGetItem(ctx context.Context, params *dynamodb.Ba
 	return out, nil
 }
 
-func (f *fakeDynamoClient) PutItem(ctx context.Context, params *dynamodb.PutItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error) {
-	if f.putItemErr != nil {
-		return nil, f.putItemErr
-	}
-	return &dynamodb.PutItemOutput{}, nil
-}
-
 func (f *fakeDynamoClient) BatchWriteItem(ctx context.Context, params *dynamodb.BatchWriteItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.BatchWriteItemOutput, error) {
 	f.batchWriteCalls++
 
@@ -76,30 +67,6 @@ func (f *fakeDynamoClient) BatchWriteItem(ctx context.Context, params *dynamodb.
 	}
 
 	return &dynamodb.BatchWriteItemOutput{}, nil
-}
-
-func TestStore_PutExpense(t *testing.T) {
-	expense := Expense{ID: "1", Date: time.Now(), Category: "Groceries"}
-
-	t.Run("success", func(t *testing.T) {
-		client := &fakeDynamoClient{}
-		store := newStore(client, "expenses", nil)
-
-		if err := store.PutExpense(context.Background(), expense); err != nil {
-			t.Fatalf("PutExpense() error = %v", err)
-		}
-	})
-
-	t.Run("client error", func(t *testing.T) {
-		wantErr := errors.New("boom")
-		client := &fakeDynamoClient{putItemErr: wantErr}
-		store := newStore(client, "expenses", nil)
-
-		err := store.PutExpense(context.Background(), expense)
-		if !errors.Is(err, wantErr) {
-			t.Fatalf("PutExpense() error = %v, want wrapped %v", err, wantErr)
-		}
-	})
 }
 
 func TestStore_SaveExpenses_Empty(t *testing.T) {
@@ -387,17 +354,10 @@ func TestStore_ErrorsHoldNoBankData(t *testing.T) {
 		Merchant: "REWE Markt GmbH", RawDescription: "Kartenzahlung 12.03", Category: "groceries",
 	}
 	tests := []struct {
-		name     string
-		client   *fakeDynamoClient
-		run      func(*Store) error
-		wantDate bool
+		name   string
+		client *fakeDynamoClient
+		run    func(*Store) error
 	}{
-		{
-			name:     "put item",
-			client:   &fakeDynamoClient{putItemErr: errors.New("boom")},
-			run:      func(s *Store) error { return s.PutExpense(context.Background(), expense) },
-			wantDate: true,
-		},
 		{
 			name:   "batch write",
 			client: &fakeDynamoClient{batchWriteErr: errors.New("boom")},
@@ -415,9 +375,6 @@ func TestStore_ErrorsHoldNoBankData(t *testing.T) {
 				if strings.Contains(msg, v) {
 					t.Errorf("error %q contains %q", err, v)
 				}
-			}
-			if tt.wantDate && !strings.Contains(msg, "2026-08-14") {
-				t.Errorf("error %q does not name the expense's date", err)
 			}
 		})
 	}
@@ -441,11 +398,6 @@ func TestStore_APIErrorDropsMessage(t *testing.T) {
 		client *fakeDynamoClient
 		run    func(*Store) error
 	}{
-		{
-			name:   "put item",
-			client: &fakeDynamoClient{putItemErr: apiErr},
-			run:    func(s *Store) error { return s.PutExpense(context.Background(), Expense{Date: day}) },
-		},
 		{
 			name:   "batch write",
 			client: &fakeDynamoClient{batchWriteErr: apiErr},

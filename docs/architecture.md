@@ -15,7 +15,7 @@ This document describes the v1 target. What is built so far:
 | `internal/categories` | Built: `YamlCategoryProvider`, tested |
 | `internal/categorizer` | Built: `Claude`, tool-output validation tested; live API test skipped without `ANTHROPIC_API_KEY`. `Keyword` (rule-based, no model) for offline local runs, tested |
 | `internal/parser` | Built: `Parser.ParseCSV` (pending filter, transaction IDs) + `FileMappingProvider` (with `Banks()` for the UI), tested |
-| `internal/storage` | Built: `PutExpense`, `SaveExpenses` (batched, retried), `KnownIDs`, tested. Not yet: `QueryExpenses` |
+| `internal/storage` | Built: `SaveExpenses` (batched, retried), `KnownIDs`, tested. Not yet: `QueryExpenses` |
 | `internal/ingest` | Built: `Importer.Import` (serial loop, skips known rows), tested with fakes |
 | `internal/uploads` | Built: `Service.Upload` (claim by SHA-256, keep the file, import, record the outcome), `Service.List`, `PostgresRecords`, `S3Blobs`, tested with fakes; Postgres and S3 integration tests run against the compose containers only ([0015](decisions/0015-upload-files-and-records.md)) |
 | `internal/handler` | Built: `POST /uploads/csv` ([0012](decisions/0012-raw-csv-upload-body.md), over `uploads.Service`), `GET /uploads`, `GET /banks`, `GET /openapi.yaml` ([0014](decisions/0014-hand-written-openapi-spec.md)), the upload web page at `/` ([0016](decisions/0016-embedded-static-web-ui.md)), request ID + access log + panic recovery middleware, tested with a fake uploader. Not yet: other endpoints, `X-API-Key` middleware |

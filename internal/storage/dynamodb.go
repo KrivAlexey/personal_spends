@@ -21,12 +21,6 @@ const (
 )
 
 type dynamoDBAPI interface {
-	PutItem(
-		ctx context.Context,
-		params *dynamodb.PutItemInput,
-		optFns ...func(*dynamodb.Options),
-	) (*dynamodb.PutItemOutput, error)
-
 	BatchWriteItem(
 		ctx context.Context,
 		params *dynamodb.BatchWriteItemInput,
@@ -87,27 +81,6 @@ func newStore(client dynamoDBAPI, table string, logger *slog.Logger) *Store {
 		logger = slog.New(slog.DiscardHandler)
 	}
 	return &Store{client: client, table: table, logger: logger}
-}
-
-func (store *Store) PutExpense(ctx context.Context, expense Expense) error {
-	item := newExpenseItem(expense)
-
-	av, err := attributevalue.MarshalMap(item)
-	if err != nil {
-		return fmt.Errorf("storage: marshal expense dated %s: %w", expense.Date.Format(time.DateOnly), err)
-	}
-
-	putItemInput := &dynamodb.PutItemInput{
-		TableName: aws.String(store.table),
-		Item:      av,
-	}
-
-	_, err = store.client.PutItem(ctx, putItemInput)
-	if err != nil {
-		return fmt.Errorf("storage: put expense dated %s: %w", expense.Date.Format(time.DateOnly), safeAPIError(err))
-	}
-
-	return nil
 }
 
 func (store *Store) SaveExpenses(ctx context.Context, expenses []Expense) error {
